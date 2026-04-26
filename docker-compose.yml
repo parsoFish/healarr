@@ -1,0 +1,48 @@
+# =============================================================================
+# Healarr — standalone deploy
+# =============================================================================
+# Drop alongside your simplarr Pi stack. Healarr reaches *arr / qBit / Plex /
+# Overseerr through the docker network if those containers share a network,
+# or via host LAN IPs otherwise (configure HEALARR_*_URL in .env).
+#
+# Outbound email: by default we mount the host's msmtp + ~/.msmtprc so
+# Healarr reuses the existing Pi mail setup with zero new credentials.
+# =============================================================================
+
+services:
+  healarr:
+    build: .
+    image: healarr:latest
+    container_name: healarr
+    restart: unless-stopped
+
+    # Subscribe to the simplarr media-network so Healarr can reach
+    # service container names directly (radarr, sonarr, etc).
+    networks:
+      - default
+      - media-network
+
+    env_file:
+      - .env
+
+    volumes:
+      # Persistent state: SQLite DB + future log files.
+      - ${HEALARR_STATE_DIR:-./state}:/var/lib/healarr
+
+      # Reuse host msmtp if HEALARR_SMTP_VIA_MSMTP=true (default).
+      # Comment these out if you'd rather supply IMAP/SMTP creds in .env
+      # and use Python's stdlib smtplib.
+      - /usr/bin/msmtp:/usr/bin/msmtp:ro
+      - ${HEALARR_HOST_MSMTPRC:-/home/parso/.msmtprc}:/home/healarr/.msmtprc:ro
+
+    healthcheck:
+      test: ["CMD", "python", "-m", "healarr", "--version"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+  media-network:
+    external: true

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "healarr"
+version = "0.1.0"
+description = "Self-healing agent for Plex/*arr media stacks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "parsoFish" }]
+keywords = ["plex", "radarr", "sonarr", "overseerr", "monitoring", "claude"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Home Automation",
+  "Topic :: System :: Monitoring",
+]
+
+dependencies = [
+  "anthropic>=0.40.0",
+  "httpx>=0.27.0",
+  "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6.0",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+healarr = "healarr.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/parsoFish/healarr"
+Issues = "https://github.com/parsoFish/healarr/issues"
+
+[tool.setuptools.packages.find]
+include = ["healarr*"]
+
+[tool.setuptools.package-data]
+healarr = ["state/schema.sql"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]  # let formatter handle line length
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
