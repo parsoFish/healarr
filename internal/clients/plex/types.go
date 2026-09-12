@@ -10,26 +10,26 @@ import (
 
 // Identity is Plex's server identity, available without authentication.
 type Identity struct {
-	MachineIdentifier string
-	Version           string
+	MachineIdentifier string `json:"machineIdentifier"`
+	Version           string `json:"version"`
 }
 
 // Library is a Plex library section (e.g. "Movies", "TV Shows").
 type Library struct {
-	Key       string
-	Title     string
-	Type      string
-	ScannedAt time.Time
-	UpdatedAt time.Time
+	Key       string    `json:"key"`
+	Title     string    `json:"title"`
+	Type      string    `json:"type"`
+	ScannedAt time.Time `json:"scannedAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Item is a piece of media returned by a library's recently-added listing.
 type Item struct {
-	RatingKey  string
-	Title      string
-	Type       string
-	AddedAt    time.Time
-	LibraryKey string
+	RatingKey  string    `json:"ratingKey"`
+	Title      string    `json:"title"`
+	Type       string    `json:"type"`
+	AddedAt    time.Time `json:"addedAt"`
+	LibraryKey string    `json:"libraryKey"`
 }
 
 // Client is the behaviour the rest of healarr depends on.

@@ -10,16 +10,16 @@ import (
 
 // HistoryRow is one playback session from Tautulli's watch history.
 type HistoryRow struct {
-	RatingKey            string
-	GrandparentRatingKey string
-	ParentRatingKey      string
-	Title                string
-	GrandparentTitle     string
-	MediaType            string
-	User                 string
-	Date                 time.Time
-	WatchedStatus        float64
-	PercentComplete      int
+	RatingKey            string    `json:"ratingKey"`
+	GrandparentRatingKey string    `json:"grandparentRatingKey"`
+	ParentRatingKey      string    `json:"parentRatingKey"`
+	Title                string    `json:"title"`
+	GrandparentTitle     string    `json:"grandparentTitle"`
+	MediaType            string    `json:"mediaType"`
+	User                 string    `json:"user"`
+	Date                 time.Time `json:"date"`
+	WatchedStatus        float64   `json:"watchedStatus"`
+	PercentComplete      int       `json:"percentComplete"`
 }
 
 // Client is the behaviour the rest of healarr depends on.

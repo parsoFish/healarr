@@ -22,9 +22,9 @@ type Indexer struct {
 }
 
 type IndexerStatus struct {
-	IndexerID         int64
-	MostRecentFailure time.Time
-	DisabledTill      time.Time
+	IndexerID         int64     `json:"indexerId"`
+	MostRecentFailure time.Time `json:"mostRecentFailure"`
+	DisabledTill      time.Time `json:"disabledTill"`
 }
 
 // nullTime decodes a Prowlarr timestamp field that may be JSON null or the

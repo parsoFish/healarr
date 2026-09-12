@@ -10,13 +10,25 @@ import (
 
 // Torrent is a single entry from /api/v2/torrents/info.
 type Torrent struct {
-	Hash, Name, State, Category, SavePath, ContentPath string
-	Progress, Ratio                                    float64
-	Size, Completed, Downloaded, Uploaded              int64
-	AddedOn, CompletionOn                              time.Time
-	SeedingTime                                        time.Duration
-	DlSpeed, UpSpeed                                   int64
-	NumSeeds, NumLeechs                                int
+	Hash         string        `json:"hash"`
+	Name         string        `json:"name"`
+	State        string        `json:"state"`
+	Category     string        `json:"category"`
+	SavePath     string        `json:"savePath"`
+	ContentPath  string        `json:"contentPath"`
+	Progress     float64       `json:"progress"`
+	Ratio        float64       `json:"ratio"`
+	Size         int64         `json:"size"`
+	Completed    int64         `json:"completed"`
+	Downloaded   int64         `json:"downloaded"`
+	Uploaded     int64         `json:"uploaded"`
+	AddedOn      time.Time     `json:"addedOn"`
+	CompletionOn time.Time     `json:"completionOn"`
+	SeedingTime  time.Duration `json:"seedingTime"`
+	DlSpeed      int64         `json:"dlSpeed"`
+	UpSpeed      int64         `json:"upSpeed"`
+	NumSeeds     int           `json:"numSeeds"`
+	NumLeechs    int           `json:"numLeechs"`
 }
 
 // File is a single entry from /api/v2/torrents/files.
@@ -29,13 +41,16 @@ type File struct {
 }
 
 // Preferences is the subset of /api/v2/app/preferences healarr cares about.
+// Its fields carry camelCase json tags for --json output; qBittorrent's own
+// wire format uses snake_case, so decoding goes through rawPreferences (see
+// client.go) instead of these tags.
 type Preferences struct {
-	SavePath          string  `json:"save_path"`
-	TempPath          string  `json:"temp_path"`
-	TempPathEnabled   bool    `json:"temp_path_enabled"`
-	MaxRatio          float64 `json:"max_ratio"`
-	MaxSeedingTime    int     `json:"max_seeding_time"`
-	ExcludedFileNames string  `json:"excluded_file_names"`
+	SavePath          string  `json:"savePath"`
+	TempPath          string  `json:"tempPath"`
+	TempPathEnabled   bool    `json:"tempPathEnabled"`
+	MaxRatio          float64 `json:"maxRatio"`
+	MaxSeedingTime    int     `json:"maxSeedingTime"`
+	ExcludedFileNames string  `json:"excludedFileNames"`
 }
 
 // Client is the behaviour the rest of healarr depends on.

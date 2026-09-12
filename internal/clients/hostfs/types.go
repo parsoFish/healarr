@@ -15,39 +15,39 @@ import (
 type Mount struct {
 	// Target is the mount point (field 5 of mountinfo), with octal escapes
 	// such as \040 (space) decoded.
-	Target string
+	Target string `json:"target"`
 	// Source is the mount source (e.g. a device path or "host:/export"),
 	// decoded the same way as Target.
-	Source string
+	Source string `json:"source"`
 	// FSType is the filesystem type, e.g. "ext4", "nfs", "autofs".
-	FSType string
+	FSType string `json:"fsType"`
 	// Options are the per-mount options (field 6 of mountinfo), split on
 	// comma.
-	Options []string
+	Options []string `json:"options"`
 }
 
 // Usage summarises free/used space for the filesystem containing Path, in
 // bytes.
 type Usage struct {
-	Path string
+	Path string `json:"path"`
 	// Total is the filesystem's total size.
-	Total uint64
+	Total uint64 `json:"total"`
 	// Free is space available to unprivileged users (statfs Bavail).
-	Free uint64
+	Free uint64 `json:"free"`
 	// Used is Total minus the filesystem's free-block count (statfs
 	// Bfree), which can exceed Total-Free when blocks are reserved for
 	// the superuser.
-	Used uint64
+	Used uint64 `json:"used"`
 	// UsedPercent is Used as a percentage of Used+Free, in [0, 100].
-	UsedPercent float64
+	UsedPercent float64 `json:"usedPercent"`
 }
 
 // Entry is one file or directory returned by ListDir.
 type Entry struct {
-	Name    string
-	Size    int64
-	IsDir   bool
-	ModTime time.Time
+	Name    string    `json:"name"`
+	Size    int64     `json:"size"`
+	IsDir   bool      `json:"isDir"`
+	ModTime time.Time `json:"modTime"`
 }
 
 // Client is the behaviour the rest of healarr depends on for host

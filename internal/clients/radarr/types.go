@@ -13,18 +13,18 @@ type HealthItem struct {
 }
 
 type QueueItem struct {
-	ID                    int64
-	MovieID               int64
-	Title                 string
-	Status                string
-	TrackedDownloadStatus string
-	TrackedDownloadState  string
-	DownloadID            string
-	OutputPath            string
-	Size                  float64
-	SizeLeft              float64
-	Messages              []string
-	Added                 time.Time
+	ID                    int64     `json:"id"`
+	MovieID               int64     `json:"movieId"`
+	Title                 string    `json:"title"`
+	Status                string    `json:"status"`
+	TrackedDownloadStatus string    `json:"trackedDownloadStatus"`
+	TrackedDownloadState  string    `json:"trackedDownloadState"`
+	DownloadID            string    `json:"downloadId"`
+	OutputPath            string    `json:"outputPath"`
+	Size                  float64   `json:"size"`
+	SizeLeft              float64   `json:"sizeLeft"`
+	Messages              []string  `json:"messages"`
+	Added                 time.Time `json:"added"`
 }
 
 type Movie struct {

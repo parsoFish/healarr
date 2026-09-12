@@ -13,32 +13,32 @@ type HealthItem struct {
 }
 
 type QueueItem struct {
-	ID                    int64
-	SeriesID              int64
-	EpisodeID             int64
-	Title                 string
-	Status                string
-	TrackedDownloadStatus string
-	TrackedDownloadState  string
-	DownloadID            string
-	OutputPath            string
-	Size                  float64
-	SizeLeft              float64
-	Messages              []string
-	Added                 time.Time
+	ID                    int64     `json:"id"`
+	SeriesID              int64     `json:"seriesId"`
+	EpisodeID             int64     `json:"episodeId"`
+	Title                 string    `json:"title"`
+	Status                string    `json:"status"`
+	TrackedDownloadStatus string    `json:"trackedDownloadStatus"`
+	TrackedDownloadState  string    `json:"trackedDownloadState"`
+	DownloadID            string    `json:"downloadId"`
+	OutputPath            string    `json:"outputPath"`
+	Size                  float64   `json:"size"`
+	SizeLeft              float64   `json:"sizeLeft"`
+	Messages              []string  `json:"messages"`
+	Added                 time.Time `json:"added"`
 }
 
 type Series struct {
-	ID               int64
-	TVDBID           int64
-	Title            string
-	Monitored        bool
-	Status           string
-	Path             string
-	Added            time.Time
-	EpisodeFileCount int
-	EpisodeCount     int
-	SizeOnDisk       int64
+	ID               int64     `json:"id"`
+	TVDBID           int64     `json:"tvdbId"`
+	Title            string    `json:"title"`
+	Monitored        bool      `json:"monitored"`
+	Status           string    `json:"status"`
+	Path             string    `json:"path"`
+	Added            time.Time `json:"added"`
+	EpisodeFileCount int       `json:"episodeFileCount"`
+	EpisodeCount     int       `json:"episodeCount"`
+	SizeOnDisk       int64     `json:"sizeOnDisk"`
 }
 
 type RootFolder struct {

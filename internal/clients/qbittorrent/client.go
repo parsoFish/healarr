@@ -210,16 +210,35 @@ func (c *HTTPClient) Resume(ctx context.Context, hashes []string) error {
 	return nil
 }
 
+// rawPreferences mirrors /app/preferences' actual snake_case wire shape.
+// Preferences itself carries camelCase json tags for --json output, so
+// decoding goes through this private type instead.
+type rawPreferences struct {
+	SavePath          string  `json:"save_path"`
+	TempPath          string  `json:"temp_path"`
+	TempPathEnabled   bool    `json:"temp_path_enabled"`
+	MaxRatio          float64 `json:"max_ratio"`
+	MaxSeedingTime    int     `json:"max_seeding_time"`
+	ExcludedFileNames string  `json:"excluded_file_names"`
+}
+
 // Preferences fetches the application preferences.
 func (c *HTTPClient) Preferences(ctx context.Context) (Preferences, error) {
-	var out Preferences
+	var raw rawPreferences
 	err := c.withAuth(ctx, func() error {
-		return c.h.GetJSON(ctx, apiBase+"/app/preferences", nil, &out)
+		return c.h.GetJSON(ctx, apiBase+"/app/preferences", nil, &raw)
 	})
 	if err != nil {
 		return Preferences{}, fmt.Errorf("qbittorrent preferences: %w", err)
 	}
-	return out, nil
+	return Preferences{
+		SavePath:          raw.SavePath,
+		TempPath:          raw.TempPath,
+		TempPathEnabled:   raw.TempPathEnabled,
+		MaxRatio:          raw.MaxRatio,
+		MaxSeedingTime:    raw.MaxSeedingTime,
+		ExcludedFileNames: raw.ExcludedFileNames,
+	}, nil
 }
 
 // SetPreferences merges patch into the application preferences.

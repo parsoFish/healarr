@@ -11,24 +11,24 @@ import (
 // (/containers/json) with per-container inspect data (health, restarts,
 // start time).
 type Container struct {
-	ID           string
-	Name         string
-	Image        string
-	State        string
-	Status       string
-	Health       string
-	RestartCount int
-	StartedAt    time.Time
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Image        string    `json:"image"`
+	State        string    `json:"state"`
+	Status       string    `json:"status"`
+	Health       string    `json:"health"`
+	RestartCount int       `json:"restartCount"`
+	StartedAt    time.Time `json:"startedAt"`
 }
 
 // DiskUsage summarises image (and build cache) disk usage as reported by
 // GET /system/df.
 type DiskUsage struct {
-	ImagesTotal       int
-	ImagesActive      int
-	ImagesSize        int64
-	ImagesReclaimable int64
-	BuildCacheSize    int64
+	ImagesTotal       int   `json:"imagesTotal"`
+	ImagesActive      int   `json:"imagesActive"`
+	ImagesSize        int64 `json:"imagesSize"`
+	ImagesReclaimable int64 `json:"imagesReclaimable"`
+	BuildCacheSize    int64 `json:"buildCacheSize"`
 }
 
 // Client is the behaviour the rest of healarr depends on for Docker.

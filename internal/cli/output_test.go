@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/parsoFish/healarr/internal/clients/sonarr"
 )
 
 type widget struct {
@@ -233,6 +235,43 @@ func TestParseSinceTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSonarrQueueJSONUsesCamelCaseKeys guards I5: --json output must use
+// wire-style camelCase keys ("id", "seriesId") throughout, not a mix of
+// wire-tag keys and bare Go field names ("ID", "SeriesID").
+func TestSonarrQueueJSONUsesCamelCaseKeys(t *testing.T) {
+	deps, fk := newTestDeps()
+	fk.Sonarr.QueueItems = []sonarr.QueueItem{{ID: 1, SeriesID: 2, EpisodeID: 3, Title: "x"}}
+	out := runCLI(t, deps, "--json", "sonarr", "queue")
+
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(out), &rows); err != nil {
+		t.Fatalf("invalid JSON %q: %v", out, err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d: %q", len(rows), out)
+	}
+	row := rows[0]
+	if _, ok := row["id"]; !ok {
+		t.Errorf("expected camelCase key %q, got keys %v", "id", keysOf(row))
+	}
+	if _, ok := row["seriesId"]; !ok {
+		t.Errorf("expected camelCase key %q, got keys %v", "seriesId", keysOf(row))
+	}
+	for _, bare := range []string{"ID", "SeriesID", "EpisodeID"} {
+		if _, ok := row[bare]; ok {
+			t.Errorf("did not expect bare Go field name key %q in %v", bare, keysOf(row))
+		}
+	}
+}
+
+func keysOf(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func TestParseIDValidAndInvalid(t *testing.T) {
