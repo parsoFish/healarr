@@ -1,0 +1,133 @@
+{
+  "page": 1,
+  "pageSize": 1,
+  "sortKey": "movieMetadata.sortTitle",
+  "sortDirection": "descending",
+  "totalRecords": 22,
+  "records": [
+    {
+      "title": "Zodiac",
+      "originalTitle": "Zodiac",
+      "originalLanguage": {
+        "id": 1,
+        "name": "English"
+      },
+      "alternateTitles": [],
+      "secondaryYearSourceId": 0,
+      "sortTitle": "zodiac",
+      "sizeOnDisk": 0,
+      "status": "released",
+      "overview": "Over the course of a decade, editors of the San Francisco Chronicle entice themselves in the murders of the Zodiac Killer. However, as time runs its course, interest in the case dwindles in the eyes of the professionals. The Killer stops interacting with the public. However, believing he has the answers, an amateur cartoonist from the initial sightings races against time to prevent what he believes is another murder.",
+      "inCinemas": "2007-03-02T00:00:00Z",
+      "physicalRelease": "2007-09-24T00:00:00Z",
+      "digitalRelease": "2011-11-19T00:00:00Z",
+      "releaseDate": "2007-09-24T00:00:00Z",
+      "images": [
+        {
+          "coverType": "poster",
+          "url": "/MediaCover/17/poster.jpg?lastWrite=639247346799998609",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/6YmeO4pB7XTh8P8F960O1uA14JO.jpg"
+        },
+        {
+          "coverType": "fanart",
+          "url": "/MediaCover/17/fanart.jpg?lastWrite=639247346807598716",
+          "remoteUrl": "https://image.tmdb.org/t/p/original/3zCPI4JFc54xvLaJ71oI2KoP3az.jpg"
+        }
+      ],
+      "website": "https://www.paramountmovies.com/movies/zodiac",
+      "year": 2007,
+      "youTubeTrailerId": "yNncHPl1UXg",
+      "studio": "Paramount Pictures",
+      "path": "/movies/Zodiac (2007)",
+      "qualityProfileId": 1,
+      "hasFile": false,
+      "movieFileId": 0,
+      "monitored": true,
+      "minimumAvailability": "released",
+      "isAvailable": true,
+      "folderName": "/movies/Zodiac (2007)",
+      "runtime": 157,
+      "cleanTitle": "zodiac",
+      "imdbId": "tt0443706",
+      "tmdbId": 1949,
+      "titleSlug": "1949",
+      "certification": "R",
+      "genres": [
+        "Crime",
+        "Mystery",
+        "Thriller"
+      ],
+      "keywords": [
+        "1960s",
+        "1970s",
+        "alcoholic",
+        "ambiguous",
+        "awestruck",
+        "bar",
+        "based on novel or book",
+        "california",
+        "cartoonist",
+        "clinical",
+        "code",
+        "crime scene",
+        "detective",
+        "foreboding",
+        "fourth of july",
+        "frightened",
+        "investigation",
+        "journalist",
+        "killing",
+        "malicious",
+        "murder",
+        "newspaper",
+        "newspaper article",
+        "police",
+        "reporter",
+        "san francisco, california",
+        "serial killer",
+        "true crime",
+        "victim",
+        "whodunit",
+        "young man",
+        "zodiac killer"
+      ],
+      "tags": [],
+      "added": "2025-04-04T08:33:01Z",
+      "ratings": {
+        "imdb": {
+          "votes": 687762,
+          "value": 7.7,
+          "type": "user"
+        },
+        "tmdb": {
+          "votes": 11867,
+          "value": 7.532,
+          "type": "user"
+        },
+        "metacritic": {
+          "votes": 0,
+          "value": 79,
+          "type": "user"
+        },
+        "rottenTomatoes": {
+          "votes": 0,
+          "value": 90,
+          "type": "user"
+        },
+        "trakt": {
+          "votes": 20315,
+          "value": 7.76919,
+          "type": "user"
+        }
+      },
+      "popularity": 16.4113,
+      "lastSearchTime": "2025-04-04T09:18:41Z",
+      "statistics": {
+        "movieFileCount": 0,
+        "sizeOnDisk": 0,
+        "releaseGroups": []
+      },
+      "id": 17
+    }
+  ]
+}

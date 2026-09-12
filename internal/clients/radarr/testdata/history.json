@@ -1,0 +1,125 @@
+{
+  "page": 1,
+  "pageSize": 3,
+  "sortKey": "date",
+  "sortDirection": "descending",
+  "totalRecords": 157,
+  "records": [
+    {
+      "movieId": 71,
+      "sourceTitle": "/movies/American Psycho (2000)/American Psycho (2000) Bluray-2160p.mkv",
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 19,
+          "name": "Bluray-2160p",
+          "source": "bluray",
+          "resolution": 2160,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-09-12T13:54:02Z",
+      "eventType": "movieFileDeleted",
+      "data": {
+        "reason": "MissingFromDisk",
+        "releaseGroup": "YTS.MX",
+        "size": "4988462205",
+        "indexerFlags": "G_Freeleech"
+      },
+      "id": 158
+    },
+    {
+      "movieId": 54,
+      "sourceTitle": "/movies/Get Out (2017)/Get Out (2017) WEBDL-1080p.mkv",
+      "languages": [
+        {
+          "id": 5,
+          "name": "Italian"
+        },
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 3,
+          "name": "WEBDL-1080p",
+          "source": "webdl",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-09-12T13:53:58Z",
+      "eventType": "movieFileDeleted",
+      "data": {
+        "reason": "MissingFromDisk",
+        "releaseGroup": "MIRCrew",
+        "size": "2660314224",
+        "indexerFlags": "G_Freeleech"
+      },
+      "id": 157
+    },
+    {
+      "movieId": 77,
+      "sourceTitle": "/movies/Peaky Blinders - The Immortal Man (2026)/Peaky Blinders - The Immortal Man (2026) WEBDL-1080p.mkv",
+      "languages": [
+        {
+          "id": 5,
+          "name": "Italian"
+        },
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 3,
+          "name": "WEBDL-1080p",
+          "source": "webdl",
+          "resolution": 1080,
+          "modifier": "none"
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "qualityCutoffNotMet": false,
+      "date": "2026-09-12T13:53:35Z",
+      "eventType": "movieFileDeleted",
+      "data": {
+        "reason": "MissingFromDisk",
+        "releaseGroup": "MIRCrew",
+        "size": "4815363047",
+        "indexerFlags": "G_Freeleech"
+      },
+      "id": 156
+    }
+  ]
+}
