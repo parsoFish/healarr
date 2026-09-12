@@ -1,78 +1,85 @@
 # 🩺 Healarr
 
-> **A self-healing agent for Plex/*arr media stacks.**
+> **A two-node health agent for a split Plex/*arr media stack.**
 
-Healarr watches your Plex + Radarr + Sonarr + Prowlarr + Overseerr + qBittorrent + NAS, detects when work-in-progress is silently failing, and uses a Claude API agent to remediate within bounded permissions.
+Healarr watches a Pi + NAS split media stack (Radarr, Sonarr, Prowlarr, Overseerr, qBittorrent, Plex, Tautulli, Docker, host mounts), detects when work-in-progress is silently failing, and surfaces what to do about it — via a daily digest email and a small LAN-only decisions page. It is **not** a Plex dashboard; it's the layer that notices when the stack looks healthy from the outside but isn't actually doing its job.
 
-It is **not** a Plex monitoring dashboard. It's the layer that does something when monitoring goes red.
+Designed as a companion to [simplarr](https://github.com/parsoFish/simplarr) but works with any equivalent split stack.
 
-Designed as a companion to [simplarr](https://github.com/parsoFish/simplarr) but works with any equivalent stack.
-
----
-
-## What it monitors
-
-| Service | Examples of "work going wrong" |
-|---|---|
-| **Radarr / Sonarr** | Import-failed states, queue items stuck for hours, history showing repeated rejection |
-| **Prowlarr** | Indexer health flapping or completely down |
-| **Overseerr** | Requests stuck in "Processing" with no downstream pickup |
-| **qBittorrent** | Torrents stalled at 0%, completed torrents that never imported, wrong file types (your `.exe` episode) |
-| **Plex** | Library scans not firing despite new files, server unreachable beyond just the HTTP port |
-| **System** | Disk pressure on NAS, NFS mount disconnects, container restart loops |
-
-## What it does about it
-
-Two-stage pipeline:
-
-1. **Triage** — deterministic rule engine over recent observations. Emits structured events for the small fraction of observations that actually look wrong. Cheap, fast, no LLM.
-2. **Agent** — a Claude conversation invoked per event, equipped with tools scoped by risk tier:
-
-   | Tier | Examples | Default policy |
-   |---|---|---|
-   | **Observe** (read-only) | get queue, get history, get torrents | Always on |
-   | **Nudge** (reversible, no data loss) | trigger search, rescan library, retry import | Auto |
-   | **Correct** (destructive but reversible) | blocklist release, delete torrent + files, manual import | **Email approval gated** |
-   | **Escalate** (high blast radius) | delete media, modify Plex library | **Off — agent can only propose** |
-
-Approvals work via email reply ("approve" / "yes" or "reject" / "no" as the first line). No web UI required. See [docs/architecture.md](docs/architecture.md) for the full flow.
-
-## Quickstart (Phase 0 — scaffolding only)
-
-```bash
-git clone https://github.com/parsoFish/healarr
-cd healarr
-cp .env.example .env
-# fill in IMAP/SMTP creds + service API URLs/keys
-
-# Local install for development
-pip install -e .[dev]
-healarr --version
-healarr init-db
-
-# Or via Docker (recommended for production deploys)
-docker compose up -d
-docker compose logs -f
-```
-
-> **Phase 0 status**: scaffolding only. The CLI runs and the SQLite schema initialises, but the Monitor/Triage/Agent loops are stubs. See [docs/architecture.md § Phasing](docs/architecture.md#phasing) for the build plan.
+Ships as a single Go binary — `internal/cli` for the uniform `healarr <service> <verb>` command surface, `internal/agent` for the long-running daemon on each node. See [docs/architecture.md](docs/architecture.md) for the full design and [docs/decisions.md](docs/decisions.md) for why it's built this way.
 
 ## Project status
 
 | Phase | Scope | Status |
 |---|---|---|
-| **0** — Scaffolding | Repo, package layout, Docker, schema, design docs | ✅ this commit |
-| **1** — Monitor + Triage | Polling, rules, dashboard, email digests | ⏳ next |
-| **2** — Read-only agent | Agent invoked, drafts proposals, email approvals | ⏳ |
-| **3** — Write tools | Nudge auto-execute, Correct gated by approval | ⏳ |
-| **4** — Polish | Webhooks, Haiku routing, simplarr homepage tile | ⏳ |
+| **1** — CLI + clients | Uniform CLI, 9 service clients, fixtures, cross-compile CI | ✅ |
+| **2** — Checks + store + report | Check registry, SQLite store, one-shot `report generate` | ⏳ |
+| **3** — Daemon + peer + digest | Cron daemon, Pi↔NAS peer channel, first real digest email | ⏳ |
+| **4** — Web UI + decisions | `/healarr/` dashboard/decisions page, cleanups, staleness scoring | ⏳ |
+| **5** — LLM digest | Haiku 4.5 digest narrative, budget/cost log, `--no-llm` fallback | ⏳ |
+
+## Build
+
+Requires Go (see `go.mod` for the minimum version).
+
+```bash
+make build       # local dev build → dist/healarr
+make build-pi    # CGO_ENABLED=0 GOOS=linux GOARCH=arm64 → dist/healarr-linux-arm64
+make build-nas   # CGO_ENABLED=0 GOOS=linux GOARCH=amd64 → dist/healarr-linux-amd64
+make test        # go test ./... -race -cover
+make lint        # go vet + golangci-lint
+```
+
+Both `build-pi` and `build-nas` produce a static binary — nothing else needs to be installed on either host.
+
+## Configuration and secrets
+
+Config is TOML; a `[node]`-scoped `config.toml` plus a separate `secrets.toml` kept at file mode `0600`. Copy the examples and fill them in:
+
+```bash
+cp config.example.toml config.toml
+cp secrets.example.toml secrets.toml
+chmod 0600 secrets.toml
+```
+
+| Node | Config | Secrets | State |
+|---|---|---|---|
+| Pi | `/etc/healarr/config.toml` | `/etc/healarr/secrets.toml` (0600, owner `parso`) | `/var/lib/healarr/state.db` |
+| NAS | `/volume1/docker/healarr/config.toml` | `/volume1/docker/healarr/secrets.toml` (0600) | `/volume1/docker/healarr/state.db` |
+
+Each node gets its own copy of both files — `node = "pi"` or `node = "nas"` in `config.toml` decides which checks and responsibilities that instance runs (ADR-015). See [docs/runbook.md](docs/runbook.md) for first-run setup on each host.
+
+Validate a config + secrets pair without starting anything:
+
+```bash
+healarr config validate --config /etc/healarr/config.toml
+```
+
+This loads both files, checks the secrets file's permission bits, and reports what it found — it never prints key values.
+
+## CLI examples
+
+Every command supports `--json` for machine-readable output and a global `--dry-run` that guarantees no mutating call is made, even on write verbs (marked `(W)` in each service's `--help`).
+
+```bash
+# Sonarr health check items, as JSON
+healarr sonarr health --json
+
+# qBittorrent torrents stuck in the "stalled" filter
+healarr qbit list --filter stalled
+
+# Kernel mount table for the host healarr is running on
+healarr host mounts
+```
+
+Run `healarr --help` or `healarr <service> --help` for the full verb list per service.
 
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — system design, components, data flow, phasing
 - [docs/decisions.md](docs/decisions.md) — ADR-style log of design decisions
-- [docs/tools.md](docs/tools.md) — agent tool inventory by tier
-- [docs/runbook.md](docs/runbook.md) — operations runbook (stub — populated as features land)
+- [docs/tools.md](docs/tools.md) — future agent tool inventory by tier
+- [docs/runbook.md](docs/runbook.md) — operations runbook: first-run, verification, updates
 
 ## Why a separate repo?
 
