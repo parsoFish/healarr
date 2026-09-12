@@ -66,6 +66,37 @@ func TestPostFormReturnsBodyText(t *testing.T) {
 	}
 }
 
+func TestGetTextReturnsBodyText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/app/version" {
+			t.Errorf("bad path: %s", r.URL.Path)
+		}
+		if _, err := w.Write([]byte("v5.1.4")); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	if err := c.GetText(context.Background(), "/api/v2/app/version", nil, &body); err != nil || body != "v5.1.4" {
+		t.Fatalf("got %q %v", body, err)
+	}
+}
+
+func TestGetTextSurfacesNon2xxAndDiscardsNilOut(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+	if err := c.GetText(context.Background(), "/x", nil, nil); !IsStatus(err, http.StatusForbidden) {
+		t.Fatalf("want APIError 403, got %v", err)
+	}
+}
+
 func TestNewRejectsBadURL(t *testing.T) {
 	if _, err := New("://bad"); err == nil {
 		t.Fatal("expected error")

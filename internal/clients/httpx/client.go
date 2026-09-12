@@ -196,6 +196,20 @@ func (c *Client) Delete(ctx context.Context, path string, query url.Values) erro
 	return err
 }
 
+// GetText issues a GET request and returns the raw response body as text,
+// for endpoints (e.g. qBittorrent's plain-text API) that don't return JSON.
+// out == nil discards the body.
+func (c *Client) GetText(ctx context.Context, path string, query url.Values, out *string) error {
+	raw, err := c.do(ctx, http.MethodGet, c.resolve(path, query), nil, "")
+	if err != nil {
+		return err
+	}
+	if out != nil {
+		*out = string(raw)
+	}
+	return nil
+}
+
 // PostForm sends application/x-www-form-urlencoded and returns the raw text body.
 func (c *Client) PostForm(ctx context.Context, path string, form url.Values, out *string) error {
 	raw, err := c.do(ctx, http.MethodPost, c.resolve(path, nil), strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
