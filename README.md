@@ -59,7 +59,7 @@ This loads both files, checks the secrets file's permission bits, and reports wh
 
 ## CLI examples
 
-Every command supports `--json` for machine-readable output and a global `--dry-run` that guarantees no mutating call is made, even on write verbs (marked `(W)` in each service's `--help`).
+Every command supports `--json` for machine-readable output and a global `--dry-run` that guarantees no mutating call is made, even on write verbs (marked `(W)` in each service's `--help`) — including `docker exec`, which honours `--dry-run` the same as every other write verb despite not mutating Docker's own state.
 
 ```bash
 # Sonarr health check items, as JSON

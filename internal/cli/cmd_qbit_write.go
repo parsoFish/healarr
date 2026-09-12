@@ -25,7 +25,7 @@ func qbitDeleteCmd(get func() (qbittorrent.Client, error), flags *GlobalFlags) *
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, hashes []string) error {
 			deleteFiles, _ := cmd.Flags().GetBool("files")
-			desc := fmt.Sprintf("Delete(%v,%t)", hashes, deleteFiles)
+			desc := fmt.Sprintf("Delete(%v, %t)", hashes, deleteFiles)
 			return doOrDryRun(cmd, flags, desc, func() (any, error) {
 				c, err := get()
 				if err != nil {

@@ -174,6 +174,14 @@ func TestQBitDeleteRecordsCall(t *testing.T) {
 	}
 }
 
+func TestQBitDeleteDryRunMatchesFakeCallFormat(t *testing.T) {
+	deps, fk := newTestDeps()
+	out := runCLI(t, deps, "--dry-run", "qbit", "delete", "a", "b", "--files")
+	if len(fk.QBit.Calls) != 0 || !strings.Contains(out, "would Delete([a b], true)") {
+		t.Errorf("unexpected dry-run result: out=%q calls=%v", out, fk.QBit.Calls)
+	}
+}
+
 func TestQBitReannounceDryRun(t *testing.T) {
 	deps, fk := newTestDeps()
 	out := runCLI(t, deps, "--dry-run", "qbit", "reannounce", "a", "b")
@@ -236,6 +244,14 @@ func TestDockerPruneDryRunAndExec(t *testing.T) {
 	runCLI(t, deps, "docker", "exec", "sonarr", "--", "ls", "-la")
 	if got := fk.Docker.Calls[len(fk.Docker.Calls)-1]; got != "Exec(sonarr, ls -la)" {
 		t.Errorf("Exec call = %q", got)
+	}
+}
+
+func TestDockerExecDryRun(t *testing.T) {
+	deps, fk := newTestDeps()
+	out := runCLI(t, deps, "--dry-run", "docker", "exec", "sonarr", "--", "ls", "-la")
+	if len(fk.Docker.Calls) != 0 || !strings.Contains(out, "would Exec(sonarr, ls -la)") {
+		t.Errorf("unexpected dry-run result: out=%q calls=%v", out, fk.Docker.Calls)
 	}
 }
 

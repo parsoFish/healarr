@@ -118,13 +118,65 @@ func TestContainersSurfacesListError(t *testing.T) {
 	}
 }
 
+// TestContainersKeepsSummaryRowWhenInspect404s covers a container removed
+// mid-listing: /containers/json still reports it, but its own
+// /containers/{id}/json inspect now 404s. That single 404 must not fail the
+// whole listing; the summary row is kept with zero Health/StartedAt/
+// RestartCount instead.
+func TestContainersKeepsSummaryRowWhenInspect404s(t *testing.T) {
+	const removedID = "2003f0a938aba30485c40ea7bf110b77962ba26f9abcc0ea4d1b4af6dd46007a" // tautulli, per containers.json
+	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture(t, "containers.json"))
+	})
+	mux.HandleFunc("/containers/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, removedID) {
+			http.Error(w, `{"message":"No such container"}`, http.StatusNotFound)
+			return
+		}
+		if !strings.HasSuffix(r.URL.Path, "/json") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture(t, "inspect.json"))
+	})
+	c := newClient(t, mux)
+
+	list, err := c.Containers(context.Background())
+	if err != nil {
+		t.Fatalf("Containers: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 containers despite one inspect 404, got %d", len(list))
+	}
+	if list[0].Name != "prowlarr" || list[0].Health != "healthy" {
+		t.Errorf("expected the successfully-inspected container's data intact, got %+v", list[0])
+	}
+	removed := list[1]
+	if removed.Name != "tautulli" || removed.ID != removedID {
+		t.Fatalf("expected the removed container's summary row to survive, got %+v", removed)
+	}
+	if removed.Health != "" || removed.RestartCount != 0 || !removed.StartedAt.IsZero() {
+		t.Errorf("expected zero-valued inspect fields for a 404'd container, got %+v", removed)
+	}
+	if removed.State != "running" || removed.Status == "" {
+		t.Errorf("expected summary-only fields to still be populated, got %+v", removed)
+	}
+}
+
+// TestContainersSurfacesInspectError covers a non-404 inspect failure (a 404
+// is handled separately: see TestContainersKeepsSummaryRowWhenInspect404s).
 func TestContainersSurfacesInspectError(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(fixture(t, "containers.json"))
 	})
-	mux.HandleFunc("/containers/", http.NotFound)
+	mux.HandleFunc("/containers/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
 	c := newClient(t, mux)
 
 	if _, err := c.Containers(context.Background()); err == nil {

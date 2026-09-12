@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -73,23 +74,24 @@ func dockerPruneCmd(get func() (docker.Client, error), flags *GlobalFlags) *cobr
 	return cmd
 }
 
-// dockerExecCmd is not marked (W): it shells a command into a running
-// container rather than mutating Docker's own state, so it always runs.
+// dockerExecCmd shells a command into a running container. It can run
+// arbitrary commands with side effects inside that container, so it honours
+// --dry-run like every other write verb rather than always running.
 func dockerExecCmd(get func() (docker.Client, error), flags *GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "exec <name> -- <args...>",
-		Short: "Run a command inside a container",
+		Short: "Run a command inside a container (W)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := get()
-			if err != nil {
-				return err
-			}
-			v, err := c.Exec(cmd.Context(), args[0], args[1:]...)
-			if err != nil {
-				return err
-			}
-			return Print(cmd.OutOrStdout(), flags.JSON, v)
+			container, execArgs := args[0], args[1:]
+			desc := fmt.Sprintf("Exec(%s, %s)", container, strings.Join(execArgs, " "))
+			return doOrDryRun(cmd, flags, desc, func() (any, error) {
+				c, err := get()
+				if err != nil {
+					return nil, err
+				}
+				return c.Exec(cmd.Context(), container, execArgs...)
+			})
 		},
 	}
 }

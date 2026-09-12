@@ -122,6 +122,12 @@ func (c *HTTPClient) mergeInspect(ctx context.Context, r rawContainer) (Containe
 
 	insp, err := c.inspect(ctx, r.ID)
 	if err != nil {
+		if httpx.IsStatus(err, http.StatusNotFound) {
+			// The container was removed between listing and inspecting it;
+			// keep the summary row (zero Health/StartedAt/RestartCount)
+			// rather than failing the whole listing over one race.
+			return cont, nil
+		}
 		return Container{}, c.wrapErr(fmt.Sprintf("containers: inspect %s", name), err)
 	}
 	cont.RestartCount = insp.RestartCount
