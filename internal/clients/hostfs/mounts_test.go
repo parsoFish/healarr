@@ -145,6 +145,21 @@ func TestIsMountpointFreshTempDirIsFalse(t *testing.T) {
 	}
 }
 
+func TestIsMountpointRespectsCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := New("")
+	if _, err := c.IsMountpoint(ctx, "/"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("IsMountpoint(/) with cancelled ctx: err = %v, want context.Canceled", err)
+	}
+
+	dir := t.TempDir()
+	if _, err := c.IsMountpoint(ctx, dir); !errors.Is(err, context.Canceled) {
+		t.Fatalf("IsMountpoint(%s) with cancelled ctx: err = %v, want context.Canceled", dir, err)
+	}
+}
+
 func TestIsMountpointNonexistentPath(t *testing.T) {
 	c := New("")
 	if _, err := c.IsMountpoint(context.Background(), "/definitely/not/a/real/path"); err == nil {

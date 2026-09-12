@@ -105,6 +105,9 @@ func parseMountLine(line string) (Mount, error) {
 // a mount point; otherwise path is a mount point when its device differs
 // from its parent directory's device.
 func (o *OS) IsMountpoint(ctx context.Context, path string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	if path == "/" {
 		return true, nil
 	}

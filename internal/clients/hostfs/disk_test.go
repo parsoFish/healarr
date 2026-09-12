@@ -113,6 +113,52 @@ func TestDirSizeDoesNotFollowSymlinks(t *testing.T) {
 	}
 }
 
+func TestDirSizeExcludesSymlinkToRegularFile(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	targetFile := filepath.Join(outside, "target.txt")
+	if err := os.WriteFile(targetFile, make([]byte, 50), 0o644); err != nil {
+		t.Fatalf("WriteFile target.txt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "in.txt"), make([]byte, 5), 0o644); err != nil {
+		t.Fatalf("WriteFile in.txt: %v", err)
+	}
+	if err := os.Symlink(targetFile, filepath.Join(root, "link.txt")); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	c := New("")
+	size, err := c.DirSize(context.Background(), root, 0)
+	if err != nil {
+		t.Fatalf("DirSize: %v", err)
+	}
+	if size != 5 {
+		t.Errorf("DirSize = %d, want 5 (a symlink to a regular file must not be counted)", size)
+	}
+}
+
+func TestDepthBelow(t *testing.T) {
+	cases := []struct {
+		name string
+		root string
+		path string
+		want int
+	}{
+		{"root itself", "/tmp/x", "/tmp/x", 0},
+		{"filesystem root's direct child", "/", "/etc", 1},
+		{"filesystem root's grandchild", "/", "/etc/foo", 2},
+		{"nested root's direct child", "/tmp/x", "/tmp/x/file1.txt", 1},
+		{"nested root's grandchild", "/tmp/x", "/tmp/x/sub/file2.txt", 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := depthBelow(tc.root, tc.path); got != tc.want {
+				t.Errorf("depthBelow(%q, %q) = %d, want %d", tc.root, tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDirSizeRespectsCancelledContext(t *testing.T) {
 	root := buildTree(t)
 	ctx, cancel := context.WithCancel(context.Background())
