@@ -141,6 +141,7 @@ func (c *HTTPClient) WantedMissingCount(ctx context.Context) (int, error) {
 
 func (c *HTTPClient) History(ctx context.Context, since time.Time, eventType string) ([]HistoryRecord, error) {
 	var out []HistoryRecord
+	var fetched int
 	for page := 1; ; page++ {
 		q := url.Values{
 			"page": {strconv.Itoa(page)}, "pageSize": {strconv.Itoa(historyPage)},
@@ -156,13 +157,17 @@ func (c *HTTPClient) History(ctx context.Context, since time.Time, eventType str
 		if err := c.h.GetJSON(ctx, apiBase+"/history", q, &p); err != nil {
 			return nil, fmt.Errorf("sonarr history page %d: %w", page, err)
 		}
+		fetched += len(p.Records)
 		for _, r := range p.Records {
 			if !since.IsZero() && r.Date.Before(since) {
 				return out, nil // sorted descending: everything after is older
 			}
 			out = append(out, r)
 		}
-		if len(p.Records) == 0 || page*historyPage >= p.TotalRecords {
+		// fetched (not page*historyPage) tracks progress so a server that
+		// returns fewer records per page than requested doesn't make this
+		// loop stop early and silently truncate the result.
+		if fetched >= p.TotalRecords || len(p.Records) == 0 {
 			return out, nil
 		}
 	}
@@ -214,10 +219,11 @@ func (c *HTTPClient) DeleteSeries(ctx context.Context, id int64, deleteFiles, ad
 }
 
 func (c *HTTPClient) RunCommand(ctx context.Context, name string, params map[string]any) (int64, error) {
-	body := map[string]any{"name": name}
+	body := make(map[string]any, len(params)+1)
 	for k, v := range params {
 		body[k] = v
 	}
+	body["name"] = name // set after copying params so a caller cannot override the command name
 	var out struct {
 		ID int64 `json:"id"`
 	}

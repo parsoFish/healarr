@@ -122,6 +122,28 @@ func TestRunCommandReturnsID(t *testing.T) {
 	}
 }
 
+func TestRunCommandNameCannotBeOverriddenByParams(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"id":1}`)); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer srv.Close()
+
+	c, _ := New(srv.URL, "key")
+	if _, err := c.RunCommand(context.Background(), "RescanMovie", map[string]any{"name": "Backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if body["name"] != "RescanMovie" {
+		t.Errorf("expected the caller-supplied command name to win, got %q", body["name"])
+	}
+}
+
 func TestUpdateMovieMonitoredPatchesWithoutMutatingFetchedMap(t *testing.T) {
 	var putBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
