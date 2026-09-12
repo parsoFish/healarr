@@ -156,6 +156,48 @@ func TestPostJSONSendsBodyAndDecodes(t *testing.T) {
 	}
 }
 
+func TestPostJSONQuerySendsQueryAndBodyAndDecodes(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Query().Get("filters") != `{"dangling":["true"]}` {
+			t.Errorf("bad request: %s %s", r.Method, r.URL.RawQuery)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected JSON content type, got %q", r.Header.Get("Content-Type"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write([]byte(`{"SpaceReclaimed":42}`)); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+	var out struct{ SpaceReclaimed int64 }
+	q := url.Values{"filters": {`{"dangling":["true"]}`}}
+	if err := c.PostJSONQuery(context.Background(), "/images/prune", q, nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.SpaceReclaimed != 42 {
+		t.Fatalf("decoded %+v", out)
+	}
+}
+
+func TestPostJSONQuerySameCapAndAPIErrorAsPostJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"message":"nope"}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+
+	errQuery := c.PostJSONQuery(context.Background(), "/x", url.Values{"a": {"1"}}, nil, nil)
+	if !IsStatus(errQuery, http.StatusBadRequest) {
+		t.Fatalf("want APIError 400 from PostJSONQuery, got %v", errQuery)
+	}
+	errPlain := c.PostJSON(context.Background(), "/x", nil, nil)
+	if !IsStatus(errPlain, http.StatusBadRequest) {
+		t.Fatalf("want APIError 400 from PostJSON, got %v", errPlain)
+	}
+}
+
 func TestPutJSONSendsBodyAndDecodes(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {

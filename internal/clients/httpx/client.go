@@ -166,14 +166,14 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out
 	return decode(raw, out)
 }
 
-func (c *Client) sendJSON(ctx context.Context, method, path string, body, out any) error {
+func (c *Client) sendJSON(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			return fmt.Errorf("httpx: encode body: %w", err)
 		}
 	}
-	raw, err := c.do(ctx, method, c.resolve(path, nil), &buf, "application/json")
+	raw, err := c.do(ctx, method, c.resolve(path, query), &buf, "application/json")
 	if err != nil {
 		return err
 	}
@@ -182,12 +182,22 @@ func (c *Client) sendJSON(ctx context.Context, method, path string, body, out an
 
 // PostJSON issues a POST request with a JSON-encoded body and decodes the JSON response into out.
 func (c *Client) PostJSON(ctx context.Context, path string, body, out any) error {
-	return c.sendJSON(ctx, http.MethodPost, path, body, out)
+	return c.PostJSONQuery(ctx, path, nil, body, out)
+}
+
+// PostJSONQuery issues a POST request carrying both a query string and a
+// JSON-encoded body (body may be nil to send an empty body), decoding the
+// JSON response into out. It exists for endpoints that put their
+// parameters on the query string rather than in the body (e.g. Docker's
+// /images/prune?filters=...); it shares do()'s response-size cap and
+// non-2xx -> APIError handling with every other method on Client.
+func (c *Client) PostJSONQuery(ctx context.Context, path string, query url.Values, body, out any) error {
+	return c.sendJSON(ctx, http.MethodPost, path, query, body, out)
 }
 
 // PutJSON issues a PUT request with a JSON-encoded body and decodes the JSON response into out.
 func (c *Client) PutJSON(ctx context.Context, path string, body, out any) error {
-	return c.sendJSON(ctx, http.MethodPut, path, body, out)
+	return c.sendJSON(ctx, http.MethodPut, path, nil, body, out)
 }
 
 // Delete issues a DELETE request and discards the response body.

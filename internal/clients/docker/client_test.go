@@ -149,6 +149,35 @@ func TestContainersSurfacesStartedAtParseError(t *testing.T) {
 	}
 }
 
+func TestContainersHandlesNeverStartedContainer(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture(t, "containers.json"))
+	})
+	mux.HandleFunc("/containers/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"State":{"StartedAt":"0001-01-01T00:00:00Z","Health":null},"RestartCount":0}`))
+	})
+	c := newClient(t, mux)
+
+	list, err := c.Containers(context.Background())
+	if err != nil {
+		t.Fatalf("Containers: %v", err)
+	}
+	if len(list) == 0 {
+		t.Fatal("expected at least one container")
+	}
+	for _, cont := range list {
+		if !cont.StartedAt.IsZero() {
+			t.Errorf("expected zero StartedAt for a never-started container, got %v", cont.StartedAt)
+		}
+		if cont.Health != "" {
+			t.Errorf("expected empty Health when State.Health is null, got %q", cont.Health)
+		}
+	}
+}
+
 func frame(streamType byte, payload string) []byte {
 	b := make([]byte, 8+len(payload))
 	b[0] = streamType
@@ -157,9 +186,23 @@ func frame(streamType byte, payload string) []byte {
 	return b
 }
 
-func TestLogsStripsStreamHeaders(t *testing.T) {
+// inspectHandler serves a minimal inspect body reporting the given Tty
+// value, for tests that only care about Logs' tty-detection branch.
+func inspectHandler(tty bool) http.HandlerFunc {
+	body := []byte(`{"Config":{"Tty":false}}`)
+	if tty {
+		body = []byte(`{"Config":{"Tty":true}}`)
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
+}
+
+func TestLogsStripsStreamHeadersWhenNotTTY(t *testing.T) {
 	body := append(frame(1, "hello "), frame(2, "world")...)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", inspectHandler(false))
 	mux.HandleFunc("/containers/sonarr/logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("stdout") != "1" || r.URL.Query().Get("stderr") != "1" {
 			t.Errorf("expected stdout=1&stderr=1, got %s", r.URL.RawQuery)
@@ -180,9 +223,10 @@ func TestLogsStripsStreamHeaders(t *testing.T) {
 	}
 }
 
-func TestLogsPassesThroughRawWhenNotMultiplexed(t *testing.T) {
+func TestLogsPassesThroughRawWhenInspectReportsTTY(t *testing.T) {
 	raw := "plain tty output\nline two\n"
 	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", inspectHandler(true))
 	mux.HandleFunc("/containers/sonarr/logs", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(raw))
 	})
@@ -197,10 +241,32 @@ func TestLogsPassesThroughRawWhenNotMultiplexed(t *testing.T) {
 	}
 }
 
+func TestLogsFallsBackToRawWhenTTYFalseButBodyNotFramed(t *testing.T) {
+	// Defensive fallback: inspect said Tty == false (a framed stream is
+	// expected), but the body doesn't actually look framed. demultiplex
+	// must return it unchanged rather than mangle it.
+	raw := "not actually framed\n"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", inspectHandler(false))
+	mux.HandleFunc("/containers/sonarr/logs", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(raw))
+	})
+	c := newClient(t, mux)
+
+	out, err := c.Logs(context.Background(), "sonarr", 50)
+	if err != nil {
+		t.Fatalf("Logs: %v", err)
+	}
+	if out != raw {
+		t.Errorf("expected raw fallback %q, got %q", raw, out)
+	}
+}
+
 func TestLogsHandlesTruncatedFrame(t *testing.T) {
 	full := frame(1, "hello")
 	truncated := full[:len(full)-2] // header claims 5 bytes, only 3 delivered
 	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", inspectHandler(false))
 	mux.HandleFunc("/containers/sonarr/logs", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(truncated)
 	})
@@ -217,10 +283,28 @@ func TestLogsHandlesTruncatedFrame(t *testing.T) {
 
 func TestLogsSurfacesTransportError(t *testing.T) {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", inspectHandler(false))
 	mux.HandleFunc("/containers/sonarr/logs", http.NotFound)
 	c := newClient(t, mux)
 
 	if _, err := c.Logs(context.Background(), "sonarr", 10); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestLogsSurfacesInspectErrorWithoutFetchingLogs(t *testing.T) {
+	logsCalled := false
+	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/sonarr/json", http.NotFound)
+	mux.HandleFunc("/containers/sonarr/logs", func(w http.ResponseWriter, r *http.Request) {
+		logsCalled = true
+	})
+	c := newClient(t, mux)
+
+	if _, err := c.Logs(context.Background(), "sonarr", 10); err == nil {
+		t.Fatal("expected inspect error")
+	}
+	if logsCalled {
+		t.Error("expected Logs to short-circuit on inspect failure without fetching logs")
 	}
 }

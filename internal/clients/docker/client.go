@@ -2,10 +2,8 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -84,6 +82,17 @@ type rawInspect struct {
 		} `json:"Health"`
 	} `json:"State"`
 	RestartCount int `json:"RestartCount"`
+	Config       struct {
+		Tty bool `json:"Tty"`
+	} `json:"Config"`
+}
+
+// inspect fetches and decodes /containers/{name}/json for name (an id or a
+// container name both work against the Docker API).
+func (c *HTTPClient) inspect(ctx context.Context, name string) (rawInspect, error) {
+	var insp rawInspect
+	err := c.h.GetJSON(ctx, "/containers/"+url.PathEscape(name)+"/json", nil, &insp)
+	return insp, err
 }
 
 // Containers lists all containers, then inspects each to fill in health,
@@ -111,8 +120,8 @@ func (c *HTTPClient) mergeInspect(ctx context.Context, r rawContainer) (Containe
 	}
 	cont := Container{ID: r.ID, Name: name, Image: r.Image, State: r.State, Status: r.Status}
 
-	var insp rawInspect
-	if err := c.h.GetJSON(ctx, "/containers/"+r.ID+"/json", nil, &insp); err != nil {
+	insp, err := c.inspect(ctx, r.ID)
+	if err != nil {
 		return Container{}, c.wrapErr(fmt.Sprintf("containers: inspect %s", name), err)
 	}
 	cont.RestartCount = insp.RestartCount
@@ -133,21 +142,37 @@ func (c *HTTPClient) mergeInspect(ctx context.Context, r rawContainer) (Containe
 // header: [STREAM_TYPE, 0, 0, 0, SIZE(4 bytes big-endian)].
 const dockerFrameHeader = 8
 
-// Logs returns the last tail lines of combined stdout/stderr for name, with
-// Docker's multiplexed stream framing stripped when present.
+// Logs returns the last tail lines of combined stdout/stderr for name.
+//
+// Whether the log stream is framed depends on how the container was
+// started: a tty container's output carries no multiplexed-stream framing
+// at all, while a non-tty container's does. Logs consults the container's
+// own inspect data (Config.Tty) to decide which case applies, rather than
+// guessing from the body's shape, and returns the inspect error unchanged
+// if that lookup fails (no log fetch is attempted). Docker's framing is
+// stripped only when Tty is false.
 func (c *HTTPClient) Logs(ctx context.Context, name string, tail int) (string, error) {
+	insp, err := c.inspect(ctx, name)
+	if err != nil {
+		return "", c.wrapErr("logs: inspect "+name, err)
+	}
+
 	q := url.Values{"stdout": {"1"}, "stderr": {"1"}, "tail": {strconv.Itoa(tail)}}
 	var raw string
-	if err := c.h.GetText(ctx, "/containers/"+name+"/logs", q, &raw); err != nil {
+	if err := c.h.GetText(ctx, "/containers/"+url.PathEscape(name)+"/logs", q, &raw); err != nil {
 		return "", c.wrapErr("logs "+name, err)
+	}
+	if insp.Config.Tty {
+		return raw, nil
 	}
 	return demultiplex(raw), nil
 }
 
 // demultiplex strips Docker's 8-byte stream-frame headers and concatenates
-// the payloads. A tty container's log stream carries no framing at all, so
-// the raw body is returned unchanged when the first frame's header shape
-// doesn't hold (stream type 0/1/2 followed by three zero bytes).
+// the payloads. It is only reached when inspect reports Tty == false, but
+// stays defensive: if the body doesn't actually look framed (stream type
+// 0/1/2 followed by three zero bytes), it is returned unchanged rather than
+// mangled, as a fallback for a body that doesn't match what Tty promised.
 func demultiplex(raw string) string {
 	b := []byte(raw)
 	if !looksFramed(b) {
@@ -221,40 +246,8 @@ func (c *HTTPClient) PruneImages(ctx context.Context, dangling bool) (int64, err
 	var resp struct {
 		SpaceReclaimed int64 `json:"SpaceReclaimed"`
 	}
-	if err := c.postQuery(ctx, "/images/prune", q, &resp); err != nil {
+	if err := c.h.PostJSONQuery(ctx, "/images/prune", q, nil, &resp); err != nil {
 		return 0, c.wrapErr("prune images", err)
 	}
 	return resp.SpaceReclaimed, nil
-}
-
-// postQuery issues a POST with a query string and no body, decoding the
-// JSON response into out. httpx's PostJSON resolves its path without query
-// support, so image prune (the one Docker endpoint that carries parameters
-// as a query string rather than a JSON body) composes the request directly
-// against the shared *http.Client httpx already built for the unix socket.
-func (c *HTTPClient) postQuery(ctx context.Context, path string, query url.Values, out any) error {
-	full := c.h.BaseURL() + path + "?" + query.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, full, nil)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
-	}
-	resp, err := c.h.HTTP().Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return &httpx.APIError{Status: resp.StatusCode, Method: http.MethodPost, URL: full, Body: string(body)}
-	}
-	if out != nil {
-		if err := json.Unmarshal(body, out); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
-	}
-	return nil
 }
