@@ -113,6 +113,17 @@ func TestDirSizeDoesNotFollowSymlinks(t *testing.T) {
 	}
 }
 
+func TestDirSizeRespectsCancelledContext(t *testing.T) {
+	root := buildTree(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := New("")
+	if _, err := c.DirSize(ctx, root, 0); !errors.Is(err, context.Canceled) {
+		t.Fatalf("DirSize with cancelled ctx: err = %v, want context.Canceled", err)
+	}
+}
+
 func TestDirSizeNonexistentPath(t *testing.T) {
 	c := New("")
 	if _, err := c.DirSize(context.Background(), "/definitely/not/a/real/path", 0); err == nil {
