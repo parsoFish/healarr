@@ -1,0 +1,15 @@
+[
+  {
+    "path": "/tv",
+    "accessible": true,
+    "freeSpace": 1927831879680,
+    "unmappedFolders": [
+      {
+        "name": "#recycle",
+        "path": "/tv/#recycle",
+        "relativePath": "#recycle"
+      }
+    ],
+    "id": 1
+  }
+]
