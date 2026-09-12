@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -100,6 +101,32 @@ func TestPrintTableMapKeyValueRowsSorted(t *testing.T) {
 	}
 }
 
+func TestPrintJSONNilSliceIsEmptyArray(t *testing.T) {
+	var buf bytes.Buffer
+	var nilSlice []widget
+	if err := Print(&buf, true, nilSlice); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	if got := strings.TrimSpace(buf.String()); got != "[]" {
+		t.Errorf("expected \"[]\" for a nil slice, got %q", got)
+	}
+}
+
+func TestPrintTablePointerToStructDereferences(t *testing.T) {
+	var buf bytes.Buffer
+	w := &widget{Name: "ptr", Count: 3}
+	if err := Print(&buf, false, w); err != nil {
+		t.Fatalf("Print: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected header + 1 row, got %d lines: %q", len(lines), buf.String())
+	}
+	if !strings.Contains(lines[0], "Name") || !strings.Contains(lines[1], "ptr") {
+		t.Errorf("expected dereferenced struct fields, got %q", buf.String())
+	}
+}
+
 func TestPrintTableScalarPlain(t *testing.T) {
 	var buf bytes.Buffer
 	if err := Print(&buf, false, "hello"); err != nil {
@@ -145,6 +172,66 @@ func TestParseSinceEmptyIsZero(t *testing.T) {
 func TestParseSinceInvalid(t *testing.T) {
 	if _, err := parseSince("banana"); err == nil {
 		t.Fatal("expected error for invalid --since value")
+	}
+}
+
+func TestParseSinceTable(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name    string
+		in      string
+		wantErr bool
+		checkAt func(t *testing.T, since time.Time)
+	}{
+		{
+			name: "-1h", in: "-1h", wantErr: true,
+		},
+		{
+			name: "-30d", in: "-30d", wantErr: true,
+		},
+		{
+			// Ruling: "0d" is allowed and means now.
+			name: "0d", in: "0d", wantErr: false,
+			checkAt: func(t *testing.T, since time.Time) {
+				t.Helper()
+				if d := since.Sub(now).Abs(); d > time.Second {
+					t.Errorf("0d should mean ~now, got %v away", d)
+				}
+			},
+		},
+		{
+			name: "1h30m", in: "1h30m", wantErr: false,
+			checkAt: func(t *testing.T, since time.Time) {
+				t.Helper()
+				age := time.Since(since)
+				if age < 89*time.Minute || age > 91*time.Minute {
+					t.Errorf("expected ~1h30m ago, got %v", since)
+				}
+			},
+		},
+		{
+			name: "abc", in: "abc", wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			since, err := parseSince(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseSince(%q): expected error, got %v", tc.in, since)
+				}
+				if strings.Contains(tc.name, "-") && !errors.Is(err, errSinceMustBePositive) {
+					t.Errorf("parseSince(%q): expected errSinceMustBePositive, got %v", tc.in, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseSince(%q): unexpected error: %v", tc.in, err)
+			}
+			if tc.checkAt != nil {
+				tc.checkAt(t, since)
+			}
+		})
 	}
 }
 

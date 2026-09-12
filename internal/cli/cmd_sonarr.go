@@ -8,20 +8,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/sonarr"
 )
 
-// sonarrGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func sonarrGetter(deps *Deps, flags *GlobalFlags) func() (sonarr.Client, error) {
-	return func() (sonarr.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Sonarr(cfg, sec)
-	}
-}
-
 func newSonarrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := sonarrGetter(deps, flags)
+	get := newGetter(deps, flags, "sonarr", deps.Sonarr)
 	root := &cobra.Command{Use: "sonarr", Short: "Sonarr queue, series and health"}
 	root.AddCommand(
 		simpleCmd("health", "Health check items", get, flags,

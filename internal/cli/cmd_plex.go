@@ -9,20 +9,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/plex"
 )
 
-// plexGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func plexGetter(deps *Deps, flags *GlobalFlags) func() (plex.Client, error) {
-	return func() (plex.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Plex(cfg, sec)
-	}
-}
-
 func newPlexCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := plexGetter(deps, flags)
+	get := newGetter(deps, flags, "plex", deps.Plex)
 	root := &cobra.Command{Use: "plex", Short: "Plex server identity and libraries"}
 	root.AddCommand(
 		simpleCmd("identity", "Server identity", get, flags,

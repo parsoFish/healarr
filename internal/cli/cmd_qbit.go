@@ -8,20 +8,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
 )
 
-// qbitGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func qbitGetter(deps *Deps, flags *GlobalFlags) func() (qbittorrent.Client, error) {
-	return func() (qbittorrent.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.QBit(cfg, sec)
-	}
-}
-
 func newQBitCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := qbitGetter(deps, flags)
+	get := newGetter(deps, flags, "qbit", deps.QBit)
 	root := &cobra.Command{Use: "qbit", Short: "qBittorrent torrents and preferences"}
 	root.AddCommand(
 		simpleCmd("version", "qBittorrent version", get, flags,

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -15,6 +16,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errSinceMustBePositive is wrapped into parseSince's error when the caller
+// asks for a negative duration or day count, which would otherwise silently
+// produce a timestamp in the future.
+var errSinceMustBePositive = errors.New("--since must be positive")
+
 // Print writes v to w as indented JSON when jsonMode is true, or as a
 // plain-text table otherwise: a slice of structs (or a single struct,
 // treated as a one-row slice) renders as a tabwriter table with a header
@@ -23,7 +29,7 @@ import (
 // printed plainly.
 func Print(w io.Writer, jsonMode bool, v any) error {
 	if jsonMode {
-		raw, err := json.MarshalIndent(v, "", "  ")
+		raw, err := json.MarshalIndent(normalizeNilSlice(v), "", "  ")
 		if err != nil {
 			return fmt.Errorf("cli: marshal json: %w", err)
 		}
@@ -33,11 +39,28 @@ func Print(w io.Writer, jsonMode bool, v any) error {
 	return printTable(w, v)
 }
 
+// normalizeNilSlice returns an empty (non-nil) slice of v's type when v is a
+// nil slice, so JSON output reads "[]" instead of encoding/json's default
+// "null" for a nil slice.
+func normalizeNilSlice(v any) any {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Slice && rv.IsNil() {
+		return reflect.MakeSlice(rv.Type(), 0, 0).Interface()
+	}
+	return v
+}
+
 func printTable(w io.Writer, v any) error {
 	if v == nil {
 		return nil
 	}
 	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Ptr {
+		if rv.IsNil() {
+			return nil
+		}
+		rv = rv.Elem()
+	}
 	switch rv.Kind() {
 	case reflect.Map:
 		return printMapRows(w, rv)
@@ -50,7 +73,7 @@ func printTable(w io.Writer, v any) error {
 			return printStructRows(w, rv)
 		}
 	}
-	_, err := fmt.Fprintln(w, v)
+	_, err := fmt.Fprintln(w, rv.Interface())
 	return err
 }
 
@@ -151,11 +174,17 @@ func parseSince(s string) (time.Time, error) {
 		if err != nil {
 			return time.Time{}, fmt.Errorf("parse --since %q: %w", s, err)
 		}
+		if n < 0 {
+			return time.Time{}, fmt.Errorf("parse --since %q: %w", s, errSinceMustBePositive)
+		}
 		return time.Now().Add(-time.Duration(n) * 24 * time.Hour), nil
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("parse --since %q: %w", s, err)
+	}
+	if d < 0 {
+		return time.Time{}, fmt.Errorf("parse --since %q: %w", s, errSinceMustBePositive)
 	}
 	return time.Now().Add(-d), nil
 }

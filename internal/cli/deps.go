@@ -101,3 +101,23 @@ func (d *Deps) load(flags *GlobalFlags) (config.Config, config.Secrets, error) {
 	}
 	return cfg, sec, nil
 }
+
+// newGetter builds a lazy client factory for one service: it loads config
+// via deps.load only when called (never at registration time, so a
+// config-free command such as `version` never touches disk), then calls
+// ctor (one of deps.Sonarr, deps.Radarr, ...), wrapping a constructor
+// failure with name for a clearer error.
+func newGetter[C any](deps *Deps, flags *GlobalFlags, name string, ctor func(config.Config, config.Secrets) (C, error)) func() (C, error) {
+	return func() (C, error) {
+		var zero C
+		cfg, sec, err := deps.load(flags)
+		if err != nil {
+			return zero, err
+		}
+		c, err := ctor(cfg, sec)
+		if err != nil {
+			return zero, fmt.Errorf("%s client: %w", name, err)
+		}
+		return c, nil
+	}
+}

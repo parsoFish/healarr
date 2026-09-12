@@ -8,20 +8,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/tautulli"
 )
 
-// tautulliGetter returns a lazy client factory: it loads config on first
-// use (never at registration time), so `healarr version` never touches disk.
-func tautulliGetter(deps *Deps, flags *GlobalFlags) func() (tautulli.Client, error) {
-	return func() (tautulli.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Tautulli(cfg, sec)
-	}
-}
-
 func newTautulliCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := tautulliGetter(deps, flags)
+	get := newGetter(deps, flags, "tautulli", deps.Tautulli)
 	root := &cobra.Command{Use: "tautulli", Short: "Tautulli watch history and activity"}
 	root.AddCommand(
 		simpleCmd("ping", "Check connectivity", get, flags,

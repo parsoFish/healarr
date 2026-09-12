@@ -9,20 +9,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/overseerr"
 )
 
-// overseerrGetter returns a lazy client factory: it loads config on first
-// use (never at registration time), so `healarr version` never touches disk.
-func overseerrGetter(deps *Deps, flags *GlobalFlags) func() (overseerr.Client, error) {
-	return func() (overseerr.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Overseerr(cfg, sec)
-	}
-}
-
 func newOverseerrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := overseerrGetter(deps, flags)
+	get := newGetter(deps, flags, "overseerr", deps.Overseerr)
 	root := &cobra.Command{Use: "overseerr", Short: "Overseerr requests and status"}
 	root.AddCommand(
 		simpleCmd("status", "Server status", get, flags,

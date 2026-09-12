@@ -9,20 +9,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/prowlarr"
 )
 
-// prowlarrGetter returns a lazy client factory: it loads config on first
-// use (never at registration time), so `healarr version` never touches disk.
-func prowlarrGetter(deps *Deps, flags *GlobalFlags) func() (prowlarr.Client, error) {
-	return func() (prowlarr.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Prowlarr(cfg, sec)
-	}
-}
-
 func newProwlarrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := prowlarrGetter(deps, flags)
+	get := newGetter(deps, flags, "prowlarr", deps.Prowlarr)
 	root := &cobra.Command{Use: "prowlarr", Short: "Prowlarr indexers and health"}
 	root.AddCommand(
 		simpleCmd("health", "Health check items", get, flags,

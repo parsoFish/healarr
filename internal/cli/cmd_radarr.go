@@ -8,20 +8,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/radarr"
 )
 
-// radarrGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func radarrGetter(deps *Deps, flags *GlobalFlags) func() (radarr.Client, error) {
-	return func() (radarr.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Radarr(cfg, sec)
-	}
-}
-
 func newRadarrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := radarrGetter(deps, flags)
+	get := newGetter(deps, flags, "radarr", deps.Radarr)
 	root := &cobra.Command{Use: "radarr", Short: "Radarr queue, movies and health"}
 	root.AddCommand(
 		simpleCmd("health", "Health check items", get, flags,

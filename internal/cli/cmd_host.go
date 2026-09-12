@@ -8,20 +8,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
 )
 
-// hostGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func hostGetter(deps *Deps, flags *GlobalFlags) func() (hostfs.Client, error) {
-	return func() (hostfs.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Host(cfg, sec)
-	}
-}
-
 func newHostCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := hostGetter(deps, flags)
+	get := newGetter(deps, flags, "host", deps.Host)
 	root := &cobra.Command{Use: "host", Short: "Host filesystem mounts, devices and disk usage"}
 	root.AddCommand(
 		simpleCmd("mounts", "Kernel mount table", get, flags,

@@ -9,20 +9,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/docker"
 )
 
-// dockerGetter returns a lazy client factory: it loads config on first use
-// (never at registration time), so `healarr version` never touches disk.
-func dockerGetter(deps *Deps, flags *GlobalFlags) func() (docker.Client, error) {
-	return func() (docker.Client, error) {
-		cfg, sec, err := deps.load(flags)
-		if err != nil {
-			return nil, err
-		}
-		return deps.Docker(cfg, sec)
-	}
-}
-
 func newDockerCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
-	get := dockerGetter(deps, flags)
+	get := newGetter(deps, flags, "docker", deps.Docker)
 	root := &cobra.Command{Use: "docker", Short: "Docker containers, logs and disk usage"}
 	root.AddCommand(
 		simpleCmd("ps", "List containers", get, flags,
