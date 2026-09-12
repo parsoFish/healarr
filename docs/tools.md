@@ -1,8 +1,10 @@
 # Healarr — Agent Tool Inventory
 
-Reference for the tools exposed to the Claude agent. Each tool entry lists tier, target service, and behaviour.
+Reference for the tools to be exposed to the Claude agent. Each tool entry lists tier, target service, and behaviour.
 
-Tools are grouped by tier. The dispatcher in `healarr/agent/tools.py` enforces tier policy: Observe is always available, Nudge auto-executes, Correct routes through the email-approval flow, Escalate is propose-only.
+This is the Phase 2+ tool inventory: Phase 1 (this repo state) delivers the typed `internal/clients/*` service clients and the `internal/cli/*` CLI surface these tools will call into, but the tool dispatcher itself has not been built yet. It will live in `internal/check/` (see `docs/architecture.md`'s package layout) alongside the check registry, wrapping each `internal/clients/*` `Client` method as a tool function.
+
+Tools are grouped by tier. Tier policy carries over unchanged from the original design: Observe is always available, Nudge auto-executes, Correct routes through the `/healarr/` LAN web-approval flow (ADR-014 — this replaced an earlier email-reply approval design, which was dropped before it shipped), Escalate is propose-only.
 
 ## Tier 1 — Observe (read-only, always available)
 
@@ -95,7 +97,7 @@ Tools are grouped by tier. The dispatcher in `healarr/agent/tools.py` enforces t
 
 ---
 
-## Tier 3 — Correct (destructive but reversible; email-approval gated)
+## Tier 3 — Correct (destructive but reversible; web-approval gated via `/healarr/`, ADR-014)
 
 ### Radarr
 
@@ -144,9 +146,9 @@ These tools exist as schema in the agent's prompt so the model knows what shape 
 ## Adding a new tool
 
 1. Pick a tier. If unsure, default to Correct (gated) or Escalate (propose-only).
-2. Add the tool function in `healarr/agent/tools.py`. Pure function over an injected service client; returns a dict the agent can read.
-3. Register it in the tool registry with the correct tier.
-4. Add a unit test that exercises happy path + at least one error case.
+2. Add the tool function in `internal/check/` (not yet built as of Phase 1 — see `docs/architecture.md`'s package layout for where it lands). It should be a thin wrapper over the relevant `internal/clients/*` `Client` method, returning a typed result the dispatcher and, eventually, the agent can read — not a raw HTTP response.
+3. Register it in the tool/tier registry within `internal/check/` with the correct tier.
+4. Add a unit test that exercises happy path + at least one error case; the `internal/clients/*` package already ships an `httptest`-backed fake per service (Phase 1) to build it on.
 5. Update this doc.
 
 Tier reclassification (e.g. moving a Correct-tier tool to Nudge after operational confidence) is a config change in the registry — no code change needed.
