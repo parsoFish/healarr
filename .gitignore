@@ -47,3 +47,10 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Go build output & local secrets
+/dist/
+*.db
+*.db-wal
+*.db-shm
+secrets.toml
