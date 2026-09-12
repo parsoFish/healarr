@@ -122,6 +122,7 @@ Plex HTTPS quirk (probe via plex.direct + token, `InsecureSkipVerify=false` with
 
 - **Pi**: `/usr/local/bin/healarr`, config `/etc/healarr/config.toml`, secrets `/etc/healarr/secrets.toml` (0600, owner parso), state `/var/lib/healarr/`. systemd unit `healarr.service` (`User=parso`, `After=docker.service network-online.target`). Web UI on `:8090` bound to the LAN address; simplarr nginx proxies `/healarr/`.
 - **NAS**: `/volume1/docker/healarr/{healarr,config.toml,secrets.toml,state.db}`. DSM Task Scheduler "boot-up" task as `lyndor` runs `deploy/dsm/healarr-boot.sh`, which execs the daemon with absolute paths. Peer listener on `:8090` LAN-only. Requires `lyndor` in the DSM `docker` group.
+- (Ports per config defaults: peer :8090, web :8091.)
 - Cross-compiled from the dev machine: `GOOS=linux GOARCH=arm64|amd64 CGO_ENABLED=0`. GitHub Actions builds both on every PR; releases attach binaries.
 
 ## Testing

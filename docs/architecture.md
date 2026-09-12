@@ -5,7 +5,7 @@ This document captures the full system design as agreed during the design phase.
 ## Goals
 
 1. **Detect work-in-progress failures** in a Plex/*arr stack that aren't visible from liveness checks alone.
-2. **Reason about anomalies** using a Claude API agent with structured tools.
+2. **Reason about anomalies with deterministic checks**, with a single daily LLM call producing the digest narrative; per-event agent reasoning with structured tools is deferred to a later phase.
 3. **Self-heal within bounded permissions** — auto-execute reversible fixes, gate destructive ones behind a human decision on the `/healarr/` web page (ADR-014).
 4. **Stay cheap** — most monitoring is rule-driven; the agent is invoked only when reasoning is required.
 5. **Stay safe** — every destructive action is logged, dedup'd, and rate-limited.
@@ -42,7 +42,7 @@ This document captures the full system design as agreed during the design phase.
    │         ▼                                          │         ▼ (on Pi's POST /v1/decision)
    │  ┌──────────────┐  ┌──────────────┐                │  ┌──────────────┐
    │  │ internal/     │  │ internal/    │                │  │ internal/    │
-   │  │ staleness +   │  │ web/ (:8090, │                │  │ cleanup/     │
+   │  │ staleness +   │  │ web/ (:8091, │                │  │ cleanup/     │
    │  │ decision/     │  │  LAN-only)   │                │  │ decision/    │
    │  └──────┬────────┘  └──────┬───────┘                │  └──────────────┘
    │         │                  │ nginx /healarr/         │
@@ -82,7 +82,7 @@ internal/web/                             html/template + minimal JS; dashboard,
 internal/cli/                             cobra subcommands per service (`healarr <service> <verb>`)
 deploy/systemd/healarr.service            Pi unit (User=parso, After=docker.service)
 deploy/dsm/healarr-boot.sh                NAS Task Scheduler boot-up script (absolute paths, no $HOME)
-deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http://<pi-ip>:8090/; }` for simplarr split.conf
+deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http://<pi-ip>:8091/; }` for simplarr split.conf
 ```
 
 `internal/clients/*` and `internal/cli/*` are what Phase 1 (this repo state) delivers: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
@@ -168,6 +168,8 @@ Go rewrite (ADR-013..016) replaces the earlier Python-era phase plan below. Each
 - `--no-llm` flag for a fully deterministic digest
 
 ## Worked example — the .exe episode
+
+Historical illustration of the Triage-rule concept from the original design; the approval step now happens on the `/healarr/` web page (ADR-014) and per-event agent reasoning is a later phase.
 
 | Step | What happens |
 |---|---|
