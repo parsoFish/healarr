@@ -59,6 +59,9 @@ func printValidation(cmd *cobra.Command, flags *GlobalFlags, cfg config.Config, 
 		fmt.Sprintf("qbit_pass: %s", keyStatus(sec.QBitPass)),
 		fmt.Sprintf("plex_token: %s", keyStatus(sec.PlexToken)),
 		fmt.Sprintf("tautulli_api_key: %s", keyStatus(sec.TautulliAPIKey)),
+		fmt.Sprintf("peer_token: %s", keyStatus(sec.PeerToken)),
+		fmt.Sprintf("web_token: %s", keyStatus(sec.WebToken)),
+		fmt.Sprintf("anthropic_api_key: %s", keyStatus(sec.AnthropicAPIKey)),
 	}
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(w, line); err != nil {
@@ -89,6 +92,9 @@ func validationReport(cfg config.Config, sec config.Secrets) map[string]any {
 			"qbit_pass":         keyStatus(sec.QBitPass),
 			"plex_token":        keyStatus(sec.PlexToken),
 			"tautulli_api_key":  keyStatus(sec.TautulliAPIKey),
+			"peer_token":        keyStatus(sec.PeerToken),
+			"web_token":         keyStatus(sec.WebToken),
+			"anthropic_api_key": keyStatus(sec.AnthropicAPIKey),
 		},
 	}
 }

@@ -282,7 +282,7 @@ func TestConfigValidate(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(cfgBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "secrets.toml"), []byte("sonarr_api_key = \"k\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "secrets.toml"), []byte("sonarr_api_key = \"k\"\npeer_token = \"p\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := runCLI(t, DefaultDeps(), "--config", cfgPath, "config", "validate")
@@ -295,7 +295,16 @@ func TestConfigValidate(t *testing.T) {
 	if !strings.Contains(out, "radarr_api_key: missing") {
 		t.Errorf("missing radarr_api_key line: %q", out)
 	}
-	if strings.Contains(out, "\"k\"") {
+	if !strings.Contains(out, "peer_token: set") {
+		t.Errorf("missing peer_token line: %q", out)
+	}
+	if !strings.Contains(out, "web_token: missing") {
+		t.Errorf("missing web_token line: %q", out)
+	}
+	if !strings.Contains(out, "anthropic_api_key: missing") {
+		t.Errorf("missing anthropic_api_key line: %q", out)
+	}
+	if strings.Contains(out, "\"k\"") || strings.Contains(out, "\"p\"") {
 		t.Errorf("secret value leaked into output: %q", out)
 	}
 }
@@ -333,6 +342,15 @@ func TestConfigValidateJSON(t *testing.T) {
 	}
 	if got["node"] != "nas" {
 		t.Errorf("node = %v, want nas", got["node"])
+	}
+	apiKeys, ok := got["api_keys"].(map[string]any)
+	if !ok {
+		t.Fatalf("api_keys missing or wrong type: %v", got["api_keys"])
+	}
+	for _, key := range []string{"peer_token", "web_token", "anthropic_api_key"} {
+		if apiKeys[key] != "missing" {
+			t.Errorf("api_keys[%q] = %v, want %q", key, apiKeys[key], "missing")
+		}
 	}
 }
 

@@ -48,7 +48,7 @@ Healarr's Docker checks call the Engine API directly over the Unix socket using 
 
 ### "`config validate` says the secrets file is unsafe"
 
-The secrets file must be `0600` and owned by the user the agent runs as. Fix with `chmod 0600 secrets.toml` and re-run validate.
+The loader checks the secrets file's permission bits and refuses to start if it is group- or world-readable (anything but `0600`); it does not check file ownership. Fix with `chmod 0600 secrets.toml` and re-run validate.
 
 ### "NAS checks fail with a Docker permission error"
 
