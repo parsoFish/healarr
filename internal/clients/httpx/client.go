@@ -40,19 +40,34 @@ type Client struct {
 	base    *url.URL
 	headers http.Header
 	http    *http.Client
+	timeout time.Duration
 }
 
 // Option customises a Client.
 type Option func(*Client)
 
-// WithHeader sets a default header sent with every request.
+// WithHeader sets a default header sent with every request. A per-call
+// Content-Type (GetJSON/PostJSON/PutJSON/PostForm each set their own) always
+// overrides a default Content-Type set here, since the per-call value is more
+// specific; a default Accept set here is preserved instead of being replaced
+// by the client's built-in Accept default.
 func WithHeader(k, v string) Option { return func(c *Client) { c.headers.Set(k, v) } }
 
-// WithTimeout overrides the underlying http.Client's timeout.
-func WithTimeout(d time.Duration) Option { return func(c *Client) { c.http.Timeout = d } }
+// WithTimeout overrides the underlying http.Client's timeout. The value is
+// applied after all options have run, so it takes effect regardless of
+// whether WithHTTPClient is supplied before or after it in the option list.
+func WithTimeout(d time.Duration) Option { return func(c *Client) { c.timeout = d } }
 
-// WithHTTPClient replaces the underlying http.Client entirely (e.g. to share a cookie jar).
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
+// WithHTTPClient replaces the underlying http.Client with a shallow copy of h
+// (e.g. to share a cookie jar). The caller's original *http.Client is never
+// mutated by later options (such as WithTimeout or WithTLSServerName) or by
+// requests made through this Client.
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) {
+		cp := *h
+		c.http = &cp
+	}
+}
 
 // WithTLSServerName sets SNI/verification name (Plex's plex.direct certificates).
 func WithTLSServerName(name string) Option {
@@ -69,12 +84,18 @@ func WithTLSServerName(name string) Option {
 // New builds a client for baseURL.
 func New(baseURL string, opts ...Option) (*Client, error) {
 	u, err := url.Parse(baseURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	if err != nil {
+		return nil, fmt.Errorf("httpx: invalid base URL %q: %w", baseURL, err)
+	}
+	if u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("httpx: invalid base URL %q", baseURL)
 	}
 	c := &Client{base: u, headers: http.Header{}, http: &http.Client{Timeout: defaultTimeout}}
 	for _, o := range opts {
 		o(c)
+	}
+	if c.timeout != 0 {
+		c.http.Timeout = c.timeout
 	}
 	return c, nil
 }
@@ -107,7 +128,9 @@ func (c *Client) do(ctx context.Context, method, rawURL string, body io.Reader, 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	req.Header.Set("Accept", "application/json, text/plain;q=0.9, */*;q=0.5")
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "application/json, text/plain;q=0.9, */*;q=0.5")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: %s %s: %w", method, rawURL, err)

@@ -223,3 +223,89 @@ func TestBaseURLReturnsConfiguredURL(t *testing.T) {
 		t.Fatalf("got %q", c.BaseURL())
 	}
 }
+
+func TestWithHeaderAcceptOverridesDefault(t *testing.T) {
+	var gotAccept string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccept = r.Header.Get("Accept")
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL, WithHeader("Accept", "text/xml"))
+	if err := c.GetJSON(context.Background(), "/x", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotAccept != "text/xml" {
+		t.Fatalf("expected caller's Accept header to win, got %q", gotAccept)
+	}
+}
+
+func TestDefaultAcceptHeaderSentWhenNotOverridden(t *testing.T) {
+	var gotAccept string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccept = r.Header.Get("Accept")
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+	if err := c.GetJSON(context.Background(), "/x", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotAccept != "application/json, text/plain;q=0.9, */*;q=0.5" {
+		t.Fatalf("expected default Accept header, got %q", gotAccept)
+	}
+}
+
+func TestWithTimeoutThenWithHTTPClientStillAppliesTimeout(t *testing.T) {
+	custom := &http.Client{}
+	c, err := New("http://example.com", WithTimeout(3*time.Second), WithHTTPClient(custom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HTTP().Timeout != 3*time.Second {
+		t.Fatalf("expected 3s timeout applied after WithHTTPClient, got %v", c.HTTP().Timeout)
+	}
+	if custom.Timeout != 0 {
+		t.Fatalf("caller's original http.Client must not be mutated, got Timeout=%v", custom.Timeout)
+	}
+}
+
+func TestWithHTTPClientThenWithTimeoutAppliesTimeoutAndCopiesClient(t *testing.T) {
+	custom := &http.Client{Timeout: 99 * time.Second}
+	c, err := New("http://example.com", WithHTTPClient(custom), WithTimeout(3*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HTTP().Timeout != 3*time.Second {
+		t.Fatalf("expected 3s timeout, got %v", c.HTTP().Timeout)
+	}
+	if custom.Timeout != 99*time.Second {
+		t.Fatalf("caller's original http.Client must not be mutated, got Timeout=%v", custom.Timeout)
+	}
+	if c.HTTP() == custom {
+		t.Fatal("expected WithHTTPClient to store a copy, not the caller's pointer")
+	}
+}
+
+func TestWithHTTPClientAloneCopiesCallerClientWithoutMutating(t *testing.T) {
+	custom := &http.Client{Timeout: 42 * time.Second}
+	c, err := New("http://example.com", WithHTTPClient(custom))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HTTP() == custom {
+		t.Fatal("expected a copy, got the caller's own pointer")
+	}
+	if c.HTTP().Timeout != 42*time.Second {
+		t.Fatalf("expected copied Timeout 42s, got %v", c.HTTP().Timeout)
+	}
+	c.HTTP().Timeout = 1 * time.Second
+	if custom.Timeout != 42*time.Second {
+		t.Fatalf("mutating the client's copy must not affect the caller's original, got %v", custom.Timeout)
+	}
+}
+
+func TestNewWrapsURLParseError(t *testing.T) {
+	_, err := New("://bad")
+	if err == nil || !strings.Contains(err.Error(), "invalid base URL") {
+		t.Fatalf("expected wrapped parse error, got %v", err)
+	}
+}
