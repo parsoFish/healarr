@@ -2,6 +2,9 @@ package httpx
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -118,7 +121,9 @@ func TestWithTLSServerNameClonesDefaultTransportWhenNil(t *testing.T) {
 }
 
 func TestWithTLSServerNamePreservesExistingTransport(t *testing.T) {
-	existing := &http.Transport{MaxIdleConns: 7}
+	rootCAs := x509.NewCertPool()
+	existingTLS := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS13}
+	existing := &http.Transport{MaxIdleConns: 7, TLSClientConfig: existingTLS}
 	c, err := New("https://example.com", WithHTTPClient(&http.Client{Transport: existing}), WithTLSServerName("y"))
 	if err != nil {
 		t.Fatal(err)
@@ -127,11 +132,37 @@ func TestWithTLSServerNamePreservesExistingTransport(t *testing.T) {
 	if !ok || tr == nil {
 		t.Fatalf("expected *http.Transport, got %T", c.HTTP().Transport)
 	}
-	if tr.MaxIdleConns != 7 {
-		t.Fatalf("expected existing transport to be reused, MaxIdleConns=%d", tr.MaxIdleConns)
+	if tr == existing {
+		t.Fatal("expected a cloned transport, got the caller's original")
 	}
-	if tr.TLSClientConfig == nil || tr.TLSClientConfig.ServerName != "y" {
+	if tr.MaxIdleConns != 7 {
+		t.Fatalf("expected existing transport settings to carry over, MaxIdleConns=%d", tr.MaxIdleConns)
+	}
+	if tr.TLSClientConfig == existingTLS {
+		t.Fatal("expected a cloned TLS config, got the caller's original")
+	}
+	if tr.TLSClientConfig.ServerName != "y" {
 		t.Fatalf("expected TLSClientConfig.ServerName %q, got %+v", "y", tr.TLSClientConfig)
+	}
+	if tr.TLSClientConfig.RootCAs != rootCAs {
+		t.Fatal("expected RootCAs to survive cloning")
+	}
+	if tr.TLSClientConfig.MinVersion != tls.VersionTLS13 {
+		t.Fatalf("expected existing MinVersion to be preserved, got %v", tr.TLSClientConfig.MinVersion)
+	}
+
+	// The caller's own transport and TLS config must be left untouched.
+	if existing.TLSClientConfig != existingTLS {
+		t.Fatal("caller's transport TLSClientConfig field was mutated")
+	}
+	if existingTLS.ServerName != "" {
+		t.Fatalf("caller's TLS config was mutated: ServerName=%q", existingTLS.ServerName)
+	}
+	if existingTLS.MinVersion != tls.VersionTLS13 {
+		t.Fatalf("caller's TLS config MinVersion was mutated: %v", existingTLS.MinVersion)
+	}
+	if existing.MaxIdleConns != 7 {
+		t.Fatalf("caller's transport was mutated: MaxIdleConns=%d", existing.MaxIdleConns)
 	}
 }
 
@@ -380,5 +411,70 @@ func TestNewWrapsURLParseError(t *testing.T) {
 	_, err := New("://bad")
 	if err == nil || !strings.Contains(err.Error(), "invalid base URL") {
 		t.Fatalf("expected wrapped parse error, got %v", err)
+	}
+}
+
+func TestNon2xxRedactsQueryValuesAndOmitsBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "top secret failure body", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+	err := c.GetJSON(context.Background(), "/status", url.Values{"apikey": {"SUPERSECRET"}}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "SUPERSECRET") {
+		t.Fatalf("error leaked API key: %v", err)
+	}
+	if !strings.Contains(err.Error(), "REDACTED") {
+		t.Fatalf("expected redacted marker in error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "top secret failure body") {
+		t.Fatalf("expected body to be omitted for a query-carrying request, got %v", err)
+	}
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if strings.Contains(ae.URL, "SUPERSECRET") {
+		t.Fatalf("APIError.URL leaked API key: %q", ae.URL)
+	}
+}
+
+func TestNon2xxIncludesBodyWhenNoQuery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "plain failure body", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL)
+	err := c.GetJSON(context.Background(), "/status", nil, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "plain failure body") {
+		t.Fatalf("expected body to be included for a query-less request, got %v", err)
+	}
+}
+
+func TestTransportErrorRedactsQueryValues(t *testing.T) {
+	// Port 1 is privileged and unlikely to have a listener, so the dial
+	// fails immediately with a transport error rather than a timeout.
+	c, err := New("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.GetJSON(context.Background(), "/x", url.Values{"apikey": {"SUPERSECRET"}}, nil)
+	if err == nil {
+		t.Fatal("expected a transport error connecting to a closed port")
+	}
+	if strings.Contains(err.Error(), "SUPERSECRET") {
+		t.Fatalf("transport error leaked API key: %v", err)
+	}
+}
+
+func TestRedactURLLeavesQuerylessURLUnchanged(t *testing.T) {
+	if got := redactURL("http://example.com/path"); got != "http://example.com/path" {
+		t.Fatalf("expected unchanged URL, got %q", got)
 	}
 }

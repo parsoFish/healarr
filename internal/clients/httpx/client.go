@@ -29,6 +29,54 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%s %s: HTTP %d: %s", e.Method, e.URL, e.Status, truncate(e.Body, 200))
 }
 
+// redactURL returns a copy of rawURL with every query parameter value
+// replaced by "REDACTED" (parameter names are preserved). It is the single
+// choke point every error path in this package must send a request URL
+// through before it can appear in an error message, since query strings
+// routinely carry secrets (e.g. Tautulli's apikey parameter). Unparsable
+// input is returned unchanged, since it cannot contain a decodable query.
+func redactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.RawQuery == "" {
+		return rawURL
+	}
+	q := u.Query()
+	for k, vs := range q {
+		redacted := make([]string, len(vs))
+		for i := range vs {
+			redacted[i] = "REDACTED"
+		}
+		q[k] = redacted
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// hasQuery reports whether rawURL carries a query string. Unparsable input
+// is treated as having none.
+func hasQuery(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	return err == nil && u.RawQuery != ""
+}
+
+// redactTransportError guards against a secret leaking through the standard
+// library's own error message: net/http and net/url both report failures as
+// a *url.Error whose Error() method embeds the full request URL verbatim
+// (e.g. `Get "http://host/x?apikey=...": dial tcp ...`), bypassing
+// redactURL on our own wrapping text entirely. It returns a copy of err with
+// any embedded *url.Error's URL field redacted, preserving the error chain
+// (errors.Is/As, Unwrap) and leaving err itself unmodified; err is returned
+// unchanged if it contains no *url.Error.
+func redactTransportError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	redacted := *ue
+	redacted.URL = redactURL(ue.URL)
+	return &redacted
+}
+
 // IsStatus reports whether err is an APIError with the given status.
 func IsStatus(err error, status int) bool {
 	var ae *APIError
@@ -69,14 +117,30 @@ func WithHTTPClient(h *http.Client) Option {
 	}
 }
 
-// WithTLSServerName sets SNI/verification name (Plex's plex.direct certificates).
+// WithTLSServerName sets SNI/verification name (Plex's plex.direct
+// certificates). It never mutates a transport or TLS config supplied by the
+// caller (e.g. via WithHTTPClient): both are cloned before being changed, so
+// the caller's original *http.Transport keeps its own settings (including
+// RootCAs and MinVersion) untouched.
 func WithTLSServerName(name string) Option {
 	return func(c *Client) {
 		t, ok := c.http.Transport.(*http.Transport)
 		if !ok || t == nil {
 			t = http.DefaultTransport.(*http.Transport).Clone()
+		} else {
+			t = t.Clone()
 		}
-		t.TLSClientConfig = &tls.Config{ServerName: name, MinVersion: tls.VersionTLS12}
+		var cfg *tls.Config
+		if t.TLSClientConfig != nil {
+			cfg = t.TLSClientConfig.Clone()
+		} else {
+			cfg = &tls.Config{}
+		}
+		cfg.ServerName = name
+		if cfg.MinVersion == 0 {
+			cfg.MinVersion = tls.VersionTLS12
+		}
+		t.TLSClientConfig = cfg
 		c.http.Transport = t
 	}
 }
@@ -118,7 +182,7 @@ func (c *Client) resolve(path string, query url.Values) string {
 func (c *Client) do(ctx context.Context, method, rawURL string, body io.Reader, contentType string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
-		return nil, fmt.Errorf("httpx: build %s %s: %w", method, rawURL, err)
+		return nil, fmt.Errorf("httpx: build %s %s: %w", method, redactURL(rawURL), redactTransportError(err))
 	}
 	for k, vs := range c.headers {
 		for _, v := range vs {
@@ -133,15 +197,19 @@ func (c *Client) do(ctx context.Context, method, rawURL string, body io.Reader, 
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("httpx: %s %s: %w", method, rawURL, err)
+		return nil, fmt.Errorf("httpx: %s %s: %w", method, redactURL(rawURL), redactTransportError(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
-		return nil, fmt.Errorf("httpx: read %s %s: %w", method, rawURL, err)
+		return nil, fmt.Errorf("httpx: read %s %s: %w", method, redactURL(rawURL), err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &APIError{Status: resp.StatusCode, Method: method, URL: rawURL, Body: string(raw)}
+		respBody := string(raw)
+		if hasQuery(rawURL) {
+			respBody = "(body omitted: request carried query parameters)"
+		}
+		return nil, &APIError{Status: resp.StatusCode, Method: method, URL: redactURL(rawURL), Body: respBody}
 	}
 	return raw, nil
 }
