@@ -8,7 +8,9 @@ import (
 
 func TestReadArrAPIKey(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.xml")
-	os.WriteFile(p, []byte("<Config>\n  <ApiKey>0123abcd</ApiKey>\n</Config>"), 0o644)
+	if err := os.WriteFile(p, []byte("<Config>\n  <ApiKey>0123abcd</ApiKey>\n</Config>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	got, err := ReadArrAPIKey(p)
 	if err != nil || got != "0123abcd" {
 		t.Fatalf("got %q, %v", got, err)
@@ -17,7 +19,9 @@ func TestReadArrAPIKey(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 	empty := filepath.Join(t.TempDir(), "empty.xml")
-	os.WriteFile(empty, []byte("<Config></Config>"), 0o644)
+	if err := os.WriteFile(empty, []byte("<Config></Config>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ReadArrAPIKey(empty); err == nil {
 		t.Fatal("expected error when ApiKey element missing")
 	}
