@@ -231,14 +231,10 @@ func (c *HTTPClient) Preferences(ctx context.Context) (Preferences, error) {
 	if err != nil {
 		return Preferences{}, fmt.Errorf("qbittorrent preferences: %w", err)
 	}
-	return Preferences{
-		SavePath:          raw.SavePath,
-		TempPath:          raw.TempPath,
-		TempPathEnabled:   raw.TempPathEnabled,
-		MaxRatio:          raw.MaxRatio,
-		MaxSeedingTime:    raw.MaxSeedingTime,
-		ExcludedFileNames: raw.ExcludedFileNames,
-	}, nil
+	// rawPreferences and Preferences share identical field names, order and
+	// types (only their json tags differ), so a direct conversion is both
+	// correct and self-maintaining if a field is ever added to both.
+	return Preferences(raw), nil
 }
 
 // SetPreferences merges patch into the application preferences.
