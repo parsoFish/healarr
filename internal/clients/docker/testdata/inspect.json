@@ -1,0 +1,102 @@
+{
+  "Id": "80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063",
+  "Created": "2026-09-12T15:33:34.731208625Z",
+  "Path": "/init",
+  "Args": [],
+  "State": {
+    "Status": "running",
+    "Running": true,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 3964824,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-09-12T15:34:12.447333468Z",
+    "FinishedAt": "0001-01-01T00:00:00Z",
+    "Health": {
+      "Status": "healthy",
+      "FailingStreak": 0,
+      "Log": [
+        {
+          "Start": "2026-09-13T02:15:46.666848962+10:00",
+          "End": "2026-09-13T02:15:46.742376531+10:00",
+          "ExitCode": 0,
+          "Output": "  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current\n                                 Dload  Upload  Total   Spent   Left   Speed\n\r  0      0   0      0   0      0      0      0                              0\r100     20   0     20   0      0   5727      0   {\n  \"status\": \"OK\"\n                           0\r100     20   0     20   0      0   5627      0                              0\r100     20   0     20   0      0   5537      0                              0\n}"
+        },
+        {
+          "Start": "2026-09-13T02:16:18.112851953+10:00",
+          "End": "2026-09-13T02:16:23.013296971+10:00",
+          "ExitCode": 0,
+          "Output": "  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current\n                                 Dload  Upload  Total   Spent   Left   Speed\n\r  0      0   0      0   0      0      0      0                              0\r100     20   0     20   0      0    554      0                              0\r100     20   0     20   0      0    554      0                              0\r100     20   0     20   0      0    553      0                              0\n{\n  \"status\": \"OK\"\n}"
+        },
+        {
+          "Start": "2026-09-13T02:16:53.057640143+10:00",
+          "End": "2026-09-13T02:16:53.136658588+10:00",
+          "ExitCode": 0,
+          "Output": "  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current\n                                 Dload  Upload  Total   Spent   Left   Speed\n\r  0      0   0      0   0      0      0      0                              0{\n  \"status\": \"OK\"\n\r100     20   0     20   0      0   7541      0                              0\r100     20   0     20   0      0   7350      0                              0\r100     20   0     20   0      0   7171      0                              0\n}"
+        },
+        {
+          "Start": "2026-09-13T02:17:23.701058083+10:00",
+          "End": "2026-09-13T02:17:23.828686859+10:00",
+          "ExitCode": 0,
+          "Output": "  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current\n                                 Dload  Upload  Total   Spent   Left   Speed\n\r  0      0   0      0   0      0      0      0                              0\r100     20   0     20   0      0   2015      0                              0\r100     20   0     20   0      0   2006      0                  {\n  \"status\": \"OK\"\n            0\r100     20   0     20   0      0   1997      0                              0\n}"
+        },
+        {
+          "Start": "2026-09-13T02:17:53.860304764+10:00",
+          "End": "2026-09-13T02:17:54.0003504+10:00",
+          "ExitCode": 0,
+          "Output": "  % Total    % Received % Xferd  Average Speed  Time    Time    Time   Current\n                                 Dload  Upload  Total   Spent   Left   Speed\n\r  0      0   0      0   0      0      0      0                              0\r100     20   0     20   0      0   2329      0                              0\r100     20   0     20   0      0   2316      0                              0\r100     20   0     20   0      0   2304      0                            {\n  \"status\": \"OK\"\n  0\n}"
+        }
+      ]
+    }
+  },
+  "Image": "sha256:f7f74f364d00d98a085b7b4331ce8d7be5e0d5fce53b8a794a3d0754e3eabc86",
+  "ResolvConfPath": "/var/lib/docker/containers/80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063/resolv.conf",
+  "HostnamePath": "/var/lib/docker/containers/80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063/hostname",
+  "HostsPath": "/var/lib/docker/containers/80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063/hosts",
+  "LogPath": "/var/lib/docker/containers/80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063/80c8ef8a4d7dc571c4005472c4353e0a7107413da40b22e37df00251625e8063-json.log",
+  "Name": "/sonarr",
+  "RestartCount": 0,
+  "Driver": "overlay2",
+  "Platform": "linux",
+  "MountLabel": "",
+  "ProcessLabel": "",
+  "AppArmorProfile": "",
+  "ExecIDs": null,
+  "Config": {
+    "Hostname": "80c8ef8a4d7d",
+    "Domainname": "",
+    "User": "",
+    "AttachStdin": false,
+    "AttachStdout": true,
+    "AttachStderr": true,
+    "ExposedPorts": {
+      "8989/tcp": {}
+    },
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Cmd": [],
+    "Healthcheck": {
+      "Test": [
+        "CMD-SHELL",
+        "curl -f http://localhost:8989/ping || exit 1"
+      ],
+      "Interval": 30000000000,
+      "Timeout": 10000000000,
+      "StartPeriod": 30000000000,
+      "Retries": 3
+    },
+    "Image": "linuxserver/sonarr:4.0.19.2979-ls324",
+    "Volumes": {
+      "/config": {}
+    },
+    "WorkingDir": "/",
+    "Entrypoint": [
+      "/init"
+    ],
+    "OnBuild": null
+  }
+}

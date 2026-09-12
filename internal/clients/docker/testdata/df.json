@@ -1,0 +1,68 @@
+{
+  "LayersSize": 2362967038,
+  "Images": [
+    {
+      "Containers": 1,
+      "Created": 1789176300,
+      "Id": "sha256:f7f74f364d00d98a085b7b4331ce8d7be5e0d5fce53b8a794a3d0754e3eabc86",
+      "Labels": {
+        "build_version": "Linuxserver.io version:- 4.0.19.2979-ls324 Build-date:- 2026-09-12T01:22:40+00:00",
+        "maintainer": "thespad",
+        "org.opencontainers.image.authors": "linuxserver.io",
+        "org.opencontainers.image.created": "2026-09-12T01:22:40+00:00",
+        "org.opencontainers.image.description": "[Sonarr](https://sonarr.tv/) (formerly NZBdrone) is a PVR for usenet and bittorrent users. It can monitor multiple RSS feeds for new episodes of your favorite shows and will grab, sort and rename them. It can also be configured to automatically upgrade the quality of files already downloaded when a better quality format becomes available.  ",
+        "org.opencontainers.image.documentation": "https://docs.linuxserver.io/images/docker-sonarr",
+        "org.opencontainers.image.licenses": "GPL-3.0-only",
+        "org.opencontainers.image.ref.name": "e9da3fa2a7d36fe9ac80022bf5f2f222e6b906eb",
+        "org.opencontainers.image.revision": "e9da3fa2a7d36fe9ac80022bf5f2f222e6b906eb",
+        "org.opencontainers.image.source": "https://github.com/linuxserver/docker-sonarr",
+        "org.opencontainers.image.title": "Sonarr",
+        "org.opencontainers.image.url": "https://github.com/linuxserver/docker-sonarr/packages",
+        "org.opencontainers.image.vendor": "linuxserver.io",
+        "org.opencontainers.image.version": "4.0.19.2979-ls324"
+      },
+      "ParentId": "",
+      "RepoDigests": [
+        "linuxserver/sonarr@sha256:82172b363f9eddc02aca544f880a044f2ceb9aaf190bc87e4454e2f705eb91d0"
+      ],
+      "RepoTags": [
+        "linuxserver/sonarr:4.0.19.2979-ls324"
+      ],
+      "SharedSize": 40108838,
+      "Size": 222200871,
+      "VirtualSize": 222200871
+    },
+    {
+      "Containers": 1,
+      "Created": 1789089576,
+      "Id": "sha256:d58ad9c1c70fecd27b0372b823f9a4b537c07f328f35240ed441d93abae680e5",
+      "Labels": {
+        "build_version": "Linuxserver.io version:- v2.18.1-ls244 Build-date:- 2026-09-11T01:17:31+00:00",
+        "maintainer": "nemchik,thelamer",
+        "org.opencontainers.image.authors": "linuxserver.io",
+        "org.opencontainers.image.created": "2026-09-11T01:17:31+00:00",
+        "org.opencontainers.image.description": "[Tautulli](http://tautulli.com) is a python based web application for monitoring, analytics and notifications for Plex Media Server.",
+        "org.opencontainers.image.documentation": "https://docs.linuxserver.io/images/docker-tautulli",
+        "org.opencontainers.image.licenses": "GPL-3.0-only",
+        "org.opencontainers.image.ref.name": "6a8e16ca3b9ec86f903a8f2e60a3b23f82a48430",
+        "org.opencontainers.image.revision": "6a8e16ca3b9ec86f903a8f2e60a3b23f82a48430",
+        "org.opencontainers.image.source": "https://github.com/linuxserver/docker-tautulli",
+        "org.opencontainers.image.title": "Tautulli",
+        "org.opencontainers.image.url": "https://github.com/linuxserver/docker-tautulli/packages",
+        "org.opencontainers.image.vendor": "linuxserver.io",
+        "org.opencontainers.image.version": "v2.18.1-ls244"
+      },
+      "ParentId": "",
+      "RepoDigests": [
+        "linuxserver/tautulli@sha256:e35570d636471f8aabfac7044057712679f954844a763ba735baa9659ea142b5"
+      ],
+      "RepoTags": [
+        "linuxserver/tautulli:v2.18.1-ls244"
+      ],
+      "SharedSize": 40108838,
+      "Size": 164157373,
+      "VirtualSize": 164157373
+    }
+  ],
+  "BuilderSize": 5282340
+}
