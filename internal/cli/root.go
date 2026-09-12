@@ -9,10 +9,6 @@ import (
 	"github.com/parsoFish/healarr/internal/version"
 )
 
-// Deps carries every external dependency a command may need. Tests inject
-// fakes; main wires real clients lazily from config (see Task 11).
-type Deps struct{}
-
 // GlobalFlags are the persistent flags every subcommand can read.
 type GlobalFlags struct {
 	ConfigPath string
@@ -43,5 +39,17 @@ func NewRootCmd(deps *Deps) *cobra.Command {
 			return err
 		},
 	})
+	root.AddCommand(
+		newSonarrCmd(deps, flags),
+		newRadarrCmd(deps, flags),
+		newProwlarrCmd(deps, flags),
+		newQBitCmd(deps, flags),
+		newPlexCmd(deps, flags),
+		newTautulliCmd(deps, flags),
+		newOverseerrCmd(deps, flags),
+		newDockerCmd(deps, flags),
+		newHostCmd(deps, flags),
+		newConfigCmd(deps, flags),
+	)
 	return root
 }

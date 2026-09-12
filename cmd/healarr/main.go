@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	if err := cli.NewRootCmd(&cli.Deps{}).Execute(); err != nil {
+	if err := cli.NewRootCmd(cli.DefaultDeps()).Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "healarr:", err)
 		os.Exit(1)
 	}
