@@ -1,0 +1,15 @@
+[
+  {
+    "path": "/movies",
+    "accessible": true,
+    "freeSpace": 1927831879680,
+    "unmappedFolders": [
+      {
+        "name": "#recycle",
+        "path": "/movies/#recycle",
+        "relativePath": "#recycle"
+      }
+    ],
+    "id": 1
+  }
+]

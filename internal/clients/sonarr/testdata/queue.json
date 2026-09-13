@@ -1,0 +1,135 @@
+{
+  "page": 1,
+  "pageSize": 3,
+  "sortKey": "timeleft",
+  "sortDirection": "descending",
+  "totalRecords": 90,
+  "records": [
+    {
+      "seriesId": 14,
+      "episodeId": 1082,
+      "seasonNumber": 1,
+      "languages": [
+        {
+          "id": 8,
+          "name": "Japanese"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 9,
+          "name": "HDTV-1080p",
+          "source": "television",
+          "resolution": 1080
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "size": 954201157,
+      "title": "[HorribleSubs] Kimetsu no Yaiba - 20 (1080p)",
+      "added": "2026-02-01T08:44:41Z",
+      "status": "warning",
+      "trackedDownloadStatus": "ok",
+      "trackedDownloadState": "downloading",
+      "statusMessages": [],
+      "errorMessage": "The download is stalled with no connections",
+      "downloadId": "937D86960C7200B30A1FAD02338B54813A07336A",
+      "protocol": "torrent",
+      "downloadClient": "qBittorrent",
+      "downloadClientHasPostImportCategory": false,
+      "indexer": "LimeTorrents (Prowlarr)",
+      "episodeHasFile": false,
+      "sizeleft": 233308160,
+      "id": 1939845963
+    },
+    {
+      "seriesId": 14,
+      "episodeId": 1083,
+      "seasonNumber": 1,
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 9,
+          "name": "HDTV-1080p",
+          "source": "television",
+          "resolution": 1080
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "size": 786811268,
+      "title": "[KaiDubs] Demon Slayer (Kimetsu no Yaiba) - 21 [1080p] [English Dub] [CC] [AS-DL] [CE08D4AA]",
+      "added": "2026-02-01T08:44:43Z",
+      "status": "warning",
+      "trackedDownloadStatus": "ok",
+      "trackedDownloadState": "downloading",
+      "statusMessages": [],
+      "errorMessage": "The download is stalled with no connections",
+      "downloadId": "BD23C00251A6DBF500E77DFA5E40BD2642EA9D5E",
+      "protocol": "torrent",
+      "downloadClient": "qBittorrent",
+      "downloadClientHasPostImportCategory": false,
+      "indexer": "LimeTorrents (Prowlarr)",
+      "episodeHasFile": false,
+      "sizeleft": 703594496,
+      "id": 53854503
+    },
+    {
+      "seriesId": 14,
+      "episodeId": 1071,
+      "seasonNumber": 1,
+      "languages": [
+        {
+          "id": 1,
+          "name": "English"
+        }
+      ],
+      "quality": {
+        "quality": {
+          "id": 9,
+          "name": "HDTV-1080p",
+          "source": "television",
+          "resolution": 1080
+        },
+        "revision": {
+          "version": 1,
+          "real": 0,
+          "isRepack": false
+        }
+      },
+      "customFormats": [],
+      "customFormatScore": 0,
+      "size": 772978210,
+      "title": "[KaiDubs] Demon Slayer (Kimetsu no Yaiba) - 09 [1080p] [English Dub] [CC] [AS-DL] [515E3422]",
+      "added": "2026-02-01T08:44:39Z",
+      "status": "warning",
+      "trackedDownloadStatus": "ok",
+      "trackedDownloadState": "downloading",
+      "statusMessages": [],
+      "errorMessage": "The download is stalled with no connections",
+      "downloadId": "51C73AB200889665D58ADE2EA619930BE89C4DCE",
+      "protocol": "torrent",
+      "downloadClient": "qBittorrent",
+      "downloadClientHasPostImportCategory": false,
+      "indexer": "LimeTorrents (Prowlarr)",
+      "episodeHasFile": false,
+      "sizeleft": 767557632,
+      "id": 836867417
+    }
+  ]
+}

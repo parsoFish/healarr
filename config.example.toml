@@ -1,0 +1,59 @@
+# healarr node configuration. Copy to /etc/healarr/config.toml (Pi) or
+# /volume1/docker/healarr/config.toml (NAS). Secrets go in secrets.toml (0600).
+node = "pi"                       # "pi" | "nas"
+
+[services.sonarr]
+url = "http://localhost:8989"
+api_key_file = "/home/parso/.config/simplarr/sonarr/config.xml"   # or set sonarr_api_key in secrets.toml
+[services.radarr]
+url = "http://localhost:7878"
+api_key_file = "/home/parso/.config/simplarr/radarr/config.xml"
+[services.prowlarr]
+url = "http://localhost:9696"
+api_key_file = "/home/parso/.config/simplarr/prowlarr/config.xml"
+[services.overseerr]
+url = "http://localhost:5055"
+[services.tautulli]
+url = "http://localhost:8181"
+[services.qbittorrent]
+url = "http://192.0.2.10:8080"
+[services.plex]
+url = "https://192-0-2-10.<hash>.plex.direct:32400"   # Plex refuses plain HTTP from the LAN
+
+[peer]
+listen_addr = "0.0.0.0:8090"
+peer_url = "http://192.0.2.10:8090"
+
+[web]
+listen_addr = "0.0.0.0:8091"
+base_path = "/healarr"
+
+[email]
+to = "you@example.com"
+from = "healarr@example.com"
+msmtp_path = "/usr/bin/msmtp"
+
+[llm]
+enabled = true
+model = "claude-haiku-4-5-20251001"
+daily_budget_usd = 1.0
+
+[state]
+db_path = "/var/lib/healarr/state.db"
+
+[docker]
+socket = "/var/run/docker.sock"
+binary = "docker"
+
+[[mounts]]
+host = "/mnt/nas/tv"
+container = "sonarr"
+container_path = "/tv"
+[[mounts]]
+host = "/mnt/nas/downloads"
+container = "sonarr"
+container_path = "/downloads"
+[[mounts]]
+host = "/mnt/nas/movies"
+container = "radarr"
+container_path = "/movies"

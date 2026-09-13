@@ -16,7 +16,7 @@ Format is lightweight — short context, the decision, and its consequences. New
 
 ---
 
-## ADR-002 — Python as implementation language
+## ADR-002 — Python as implementation language (Superseded by ADR-013)
 
 **Context.** simplarr is Bash + PowerShell. Healarr needs HTTP clients, an LLM SDK, IMAP polling, SQLite, structured retry logic. Bash isn't the right tool.
 
@@ -46,7 +46,7 @@ Format is lightweight — short context, the decision, and its consequences. New
 
 ---
 
-## ADR-005 — Email-reply approvals (no web UI)
+## ADR-005 — Email-reply approvals (no web UI) (Superseded by ADR-014)
 
 **Context.** Original design proposed a web link (`http://healarr.local:8089/approve/<token>`) for approval. Requires Healarr to be reachable from wherever the user reads email — which means LAN-only unless a reverse proxy / VPN / public exposure is added. User vetoed the web UI on complexity grounds.
 
@@ -153,3 +153,49 @@ Both configurable in `.env`.
 **Decision.** Public repo at `github.com/parsoFish/healarr`. MIT license (same posture as simplarr's intent).
 
 **Consequences.** Secrets must never be committed (.env in .gitignore from day 1). Contributions could come from outside; that's a feature.
+
+---
+
+## ADR-013 — Go, single static binary (supersedes ADR-002)
+
+**Context.** The NAS (Synology DSM 7.2) ships only Python 3.8 — too old for the `anthropic` SDK's minimum and for modern type-hint syntax used elsewhere in the codebase — and the agent user on the NAS has no docker-socket access, so a Python approach would need either an upgraded interpreter installed out-of-band or a container runtime the NAS side doesn't have. The Pi side is fine either way, but the two nodes need to run the same artifact for the design to hold together (ADR-015).
+
+**Decision.** Rewrite Healarr in Go as one binary, built with `CGO_ENABLED=0` and cross-compiled per node (`GOOS=linux GOARCH=arm64` for the Pi, `GOARCH=amd64` for the NAS). The binary needs nothing installed on either host beyond the file itself — no interpreter, no virtualenv, no system packages. State storage keeps ADR-003 (SQLite) via `modernc.org/sqlite`, a pure-Go driver, so the CGO-free build doesn't lose the state store.
+
+Two library candidates were evaluated and **not** adopted: `golift.io/starr` (Sonarr/Radarr/Prowlarr client) and `github.com/autobrr/go-qbittorrent` (qBittorrent client). The surface area Healarr actually calls against each service is a handful of endpoints (queue, history, health, series/movie CRUD, torrent list/delete/reannounce) — small enough to implement directly on a shared internal `httpx` client and verify with `httptest` fakes and golden fixtures captured from the live stack. Two fewer third-party dependencies to track for breaking changes, in exchange for owning slightly more HTTP-shape code; that trade was judged worth it for a project with this few call sites per service.
+
+**Consequences.** Deployment on both nodes is "copy one file, run it" — no interpreter version skew between Pi and NAS to debug. Cross-compilation and static linking are a solved, standard Go workflow (`make build-pi` / `make build-nas`). Losing `starr` and `go-qbittorrent` means Healarr owns request/response shapes for those services directly; that surface is fixture-tested per Task 4–10 golden JSON, so drift shows up as a failing test rather than a silent runtime break. If a future service integration needs a much larger surface than the current handful of endpoints, revisit adopting a client library for that specific service.
+
+---
+
+## ADR-014 — LAN web approvals, no IMAP (supersedes ADR-005)
+
+**Context.** The original design (ADR-005) approved Correct-tier actions by replying to email, parsed over IMAP. In practice this meant a second mailbox credential, reply-parsing heuristics that could misfire on HTML-only mobile replies, and ~60s of poll latency between a reply and the action executing. The Pi already runs nginx in front of the whole simplarr stack, so exposing one more page behind it is not new operational surface.
+
+**Decision.** Approvals move to a LAN-only web page served by the Pi's agent (`internal/web/`) at `/healarr/`, reachable through the existing nginx reverse proxy. Digest emails link into this page instead of asking for a reply. No IMAP polling, no second mailbox credential, no reply-parsing.
+
+**Consequences.** Approving or rejecting a decision is immediate (a click, not a poll cycle) and removes an entire subsystem (IMAP client, UID tracking, reply-correlation heuristics) along with its failure modes. The trade-off is that decisions can now only be made from the LAN or over VPN — there is no "approve from anywhere your email works" path any more. Digest emails (ADR-004, still via msmtp) remain the out-of-band notification channel; they just carry links into the web page instead of expecting a reply.
+
+---
+
+## ADR-015 — Two nodes, Pi primary
+
+**Context.** The split stack already runs the *arr apps and Overseerr/Tautulli on the Pi and qBittorrent + Plex on the NAS, with media shared over NFS. A single-process agent on one host either can't see the other host's services directly or has to reach across the network for every check, and — critically — the NFS mount between the two hosts is itself one of the failure modes Healarr exists to detect (see the mount-race incident in the design spec), so state coordination can't depend on it.
+
+**Decision.** Each host runs its own instance of the same `healarr` binary as a long-running agent. The Pi's agent owns the *arr/Overseerr/Tautulli/docker/host-mount checks, the web UI, outbound email, and reconciliation of both nodes' reports into one daily digest — it is the primary. The NAS's agent owns qBittorrent, Plex, NAS-volume, recycle-bin, and orphan-file checks, and executes NAS-side actions when told to by the Pi. The two exchange reports and decisions over an HTTP peer channel on the LAN, authenticated with a shared bearer token from the secrets file (`POST /v1/report`, `GET /v1/report/latest`, `POST /v1/decision`, `POST /v1/heartbeat`).
+
+NFS-shared state (e.g. both agents reading/writing one SQLite file across the mount) was rejected: the mount is one of the things being monitored, so using it as the coordination substrate would make the health-checking system depend on the health of the thing it checks. SSH between the nodes was also rejected: it would need key management on both sides for a machine account and gives no structured RPC — every call would be shell-command construction and stdout scraping, which is worse for testing and worse for failure handling than a small typed HTTP API.
+
+**Consequences.** Either node can be down without losing the other's checks; an unreachable peer just makes the digest say "peer stale since …" rather than blocking. The peer protocol is a small, versioned surface (`internal/peer/`) that's easy to fixture-test independently of the real network. The cost is running and keeping in sync two deployments of the same binary with two config files, and a bearer token that has to be provisioned and rotated on both sides.
+
+---
+
+## ADR-016 — Deterministic staleness score with human decision
+
+**Context.** The NAS accumulates media nobody watches, and nothing tracked that before this project — the design spec's motivating incident found ~470GB of junk and no visibility into which shows were dead weight. Deciding what's actually stale enough to remove needs signal from several services (Tautulli watch history, Sonarr/Radarr monitored status, file size, who requested it via Overseerr, how long it's sat there) and healarr must never take the decision to delete library media out of the user's hands.
+
+**Decision.** A pure, deterministic formula (`internal/staleness/`) scores each series/movie 0–100 from: days since last Tautulli watch (0–40, linear, with an extra penalty for never-watched-and-added->30-days), watch completion (fully watched +15 / partially watched −10), Sonarr/Radarr status (ended and nothing upcoming +10 / continuing and monitored −15), size in GB/10 capped at 15, Overseerr requester (someone other than the owner and still unwatched +10 / owner −5), and age since added (0.05/day, capped at 10). All weights live in config, not code, so tuning them doesn't need a rebuild. A score ≥70 surfaces the item as a delete candidate on the `/healarr/` web page (50–69 is a watch-list entry, shown but not flagged; <50 is suppressed entirely).
+
+The agent never auto-deletes library media. A human clicking "delete" on the web page is what executes the action, and it executes through Sonarr/Radarr's delete-with-files endpoint (plus an import-list exclusion and a best-effort Overseerr request decline) rather than healarr touching files directly — so the *arr apps' own state (monitored flags, history, root-folder bookkeeping) stays consistent with what's actually on disk. "Keep" snoozes the candidate for 60 days rather than dismissing it permanently.
+
+**Consequences.** The score is fully explainable — every point is traceable to a rule and a config weight, so a human can see why something surfaced instead of trusting an opaque model. Because deletion always routes through the *arr apps, healarr can't end up with orphaned files an *arr app doesn't know about, or vice versa. The formula won't be perfect for every household's viewing habits on day one; that's why weights are config, not code, and why nothing crosses the ≥70 line into an actual delete without a person clicking it.

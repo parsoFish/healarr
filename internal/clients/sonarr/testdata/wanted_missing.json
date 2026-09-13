@@ -1,0 +1,25 @@
+{
+  "page": 1,
+  "pageSize": 1,
+  "sortKey": "episodes.airDateUtc",
+  "sortDirection": "descending",
+  "totalRecords": 730,
+  "records": [
+    {
+      "seriesId": 32,
+      "tvdbId": 11884763,
+      "episodeFileId": 0,
+      "seasonNumber": 22,
+      "episodeNumber": 2,
+      "title": "This Is Food Glue",
+      "airDate": "2026-09-10",
+      "airDateUtc": "2026-09-10T20:00:00Z",
+      "runtime": 47,
+      "overview": "The contestants venture away from the Taskmaster house to a special location. Chloe Petts finds Jesus in a slice of toast. And Richard Ayoade re-invents bouncing.",
+      "hasFile": false,
+      "monitored": true,
+      "unverifiedSceneNumbering": false,
+      "id": 3403
+    }
+  ]
+}

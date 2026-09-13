@@ -1,0 +1,607 @@
+[
+  {
+    "title": "Breaking Bad",
+    "alternateTitles": [],
+    "sortTitle": "breaking bad",
+    "status": "ended",
+    "ended": true,
+    "overview": "When Walter White, a chemistry teacher, is diagnosed with Stage III cancer and given a prognosis of two years left to live, he chooses to enter a dangerous world of drugs and crime with the intent to secure his family's financial security.",
+    "previousAiring": "2013-09-30T01:00:00Z",
+    "network": "AMC",
+    "airTime": "21:00",
+    "images": [
+      {
+        "coverType": "banner",
+        "url": "/MediaCover/1/banner.jpg?lastWrite=638787394066412412",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/graphical/81189-g21.jpg"
+      },
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/1/poster.jpg?lastWrite=638787394066612415",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/posters/81189-10.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/1/fanart.jpg?lastWrite=638787394066732416",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/fanart/original/81189-21.jpg"
+      },
+      {
+        "coverType": "clearlogo",
+        "url": "/MediaCover/1/clearlogo.png?lastWrite=638787394066772417",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/81189/clearlogo/611b4df33bac5.png"
+      }
+    ],
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "seasons": [
+      {
+        "seasonNumber": 0,
+        "monitored": false,
+        "statistics": {
+          "episodeFileCount": 0,
+          "episodeCount": 0,
+          "totalEpisodeCount": 18,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 1,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2008-03-10T01:00:00Z",
+          "episodeFileCount": 0,
+          "episodeCount": 7,
+          "totalEpisodeCount": 7,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 2,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2009-06-01T01:00:00Z",
+          "episodeFileCount": 0,
+          "episodeCount": 13,
+          "totalEpisodeCount": 13,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 3,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2010-06-14T01:00:00Z",
+          "episodeFileCount": 0,
+          "episodeCount": 13,
+          "totalEpisodeCount": 13,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 4,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2011-10-10T01:00:00Z",
+          "episodeFileCount": 0,
+          "episodeCount": 13,
+          "totalEpisodeCount": 13,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 5,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2013-09-30T01:00:00Z",
+          "episodeFileCount": 0,
+          "episodeCount": 16,
+          "totalEpisodeCount": 16,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      }
+    ],
+    "year": 2008,
+    "path": "/tv/Breaking Bad",
+    "qualityProfileId": 1,
+    "seasonFolder": true,
+    "monitored": false,
+    "monitorNewItems": "all",
+    "useSceneNumbering": false,
+    "runtime": 48,
+    "tvdbId": 81189,
+    "tvRageId": 18164,
+    "tvMazeId": 169,
+    "tmdbId": 1396,
+    "firstAired": "2008-01-20T00:00:00Z",
+    "lastAired": "2013-09-29T00:00:00Z",
+    "seriesType": "standard",
+    "cleanTitle": "breakingbad",
+    "imdbId": "tt0903747",
+    "titleSlug": "breaking-bad",
+    "rootFolderPath": "/tv",
+    "certification": "TV-MA",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Thriller",
+      "Western"
+    ],
+    "tags": [],
+    "added": "2025-01-22T11:39:53Z",
+    "ratings": {
+      "votes": 2673055,
+      "value": 9.5
+    },
+    "statistics": {
+      "seasonCount": 5,
+      "episodeFileCount": 0,
+      "episodeCount": 62,
+      "totalEpisodeCount": 80,
+      "sizeOnDisk": 0,
+      "releaseGroups": [],
+      "percentOfEpisodes": 0
+    },
+    "languageProfileId": 1,
+    "id": 1
+  },
+  {
+    "title": "King of the Hill",
+    "alternateTitles": [],
+    "sortTitle": "king of the hill",
+    "status": "continuing",
+    "ended": false,
+    "overview": "In the little town of Arlen, Texas, lives a man who embodies the spirit of the Lone Star State. Hank Hill tends his lawn with pride, never overcooks his steak and sells propane and propane accessories. In this animated series from Mike Judge, Hank and his wife Peggy work to raise their son Bobby, be good neighbors and uphold their middle-class Texas values amid a changing world.",
+    "previousAiring": "2026-07-20T04:00:00Z",
+    "network": "Hulu",
+    "airTime": "00:00",
+    "images": [
+      {
+        "coverType": "banner",
+        "url": "/MediaCover/2/banner.jpg?lastWrite=638787394067292423",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/graphical/73903-g2.jpg"
+      },
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/2/poster.jpg?lastWrite=638787394067412424",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/posters/73903-1.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/2/fanart.jpg?lastWrite=638787394067652427",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/fanart/original/73903-2.jpg"
+      },
+      {
+        "coverType": "clearlogo",
+        "url": "/MediaCover/2/clearlogo.png?lastWrite=638787394067772429",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/73903/clearlogo/611b7b534815f.png"
+      }
+    ],
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "seasons": [
+      {
+        "seasonNumber": 0,
+        "monitored": false,
+        "statistics": {
+          "episodeFileCount": 0,
+          "episodeCount": 0,
+          "totalEpisodeCount": 9,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 1,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "1997-05-11T04:00:00Z",
+          "episodeFileCount": 12,
+          "episodeCount": 12,
+          "totalEpisodeCount": 12,
+          "sizeOnDisk": 4487644197,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 2,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "1998-05-17T04:00:00Z",
+          "episodeFileCount": 23,
+          "episodeCount": 23,
+          "totalEpisodeCount": 23,
+          "sizeOnDisk": 8692085043,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 3,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "1999-05-18T04:00:00Z",
+          "episodeFileCount": 25,
+          "episodeCount": 25,
+          "totalEpisodeCount": 25,
+          "sizeOnDisk": 9460614735,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 4,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2000-05-21T04:00:00Z",
+          "episodeFileCount": 24,
+          "episodeCount": 24,
+          "totalEpisodeCount": 24,
+          "sizeOnDisk": 9105677457,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 5,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2001-05-13T04:00:00Z",
+          "episodeFileCount": 20,
+          "episodeCount": 20,
+          "totalEpisodeCount": 20,
+          "sizeOnDisk": 7561322101,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 6,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2002-05-12T04:25:00Z",
+          "episodeFileCount": 22,
+          "episodeCount": 22,
+          "totalEpisodeCount": 22,
+          "sizeOnDisk": 6143257687,
+          "releaseGroups": [
+            "SA89"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 7,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2003-05-18T04:25:00Z",
+          "episodeFileCount": 23,
+          "episodeCount": 23,
+          "totalEpisodeCount": 23,
+          "sizeOnDisk": 8598131240,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 8,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2004-05-23T04:00:00Z",
+          "episodeFileCount": 22,
+          "episodeCount": 22,
+          "totalEpisodeCount": 22,
+          "sizeOnDisk": 8138085421,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 9,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2005-05-15T04:00:00Z",
+          "episodeFileCount": 15,
+          "episodeCount": 15,
+          "totalEpisodeCount": 15,
+          "sizeOnDisk": 5530682768,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 10,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2006-05-14T04:00:00Z",
+          "episodeFileCount": 15,
+          "episodeCount": 15,
+          "totalEpisodeCount": 15,
+          "sizeOnDisk": 5524933598,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 11,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2007-05-20T04:25:00Z",
+          "episodeFileCount": 12,
+          "episodeCount": 12,
+          "totalEpisodeCount": 12,
+          "sizeOnDisk": 4722615324,
+          "releaseGroups": [
+            "QOQ"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 12,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2008-05-18T04:00:00Z",
+          "episodeFileCount": 22,
+          "episodeCount": 22,
+          "totalEpisodeCount": 22,
+          "sizeOnDisk": 8176530529,
+          "releaseGroups": [
+            "QOQ"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 13,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2009-09-13T04:25:00Z",
+          "episodeFileCount": 20,
+          "episodeCount": 20,
+          "totalEpisodeCount": 20,
+          "sizeOnDisk": 7373743143,
+          "releaseGroups": [
+            "INFINITY"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 14,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2025-08-04T04:00:00Z",
+          "episodeFileCount": 10,
+          "episodeCount": 10,
+          "totalEpisodeCount": 10,
+          "sizeOnDisk": 7689831913,
+          "releaseGroups": [
+            "successfulcrab",
+            "SuccessfulCrab"
+          ],
+          "percentOfEpisodes": 100
+        }
+      },
+      {
+        "seasonNumber": 15,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2026-07-20T04:00:00Z",
+          "episodeFileCount": 5,
+          "episodeCount": 10,
+          "totalEpisodeCount": 10,
+          "sizeOnDisk": 3715114002,
+          "releaseGroups": [
+            "CAKES",
+            "ETHEL",
+            "TRB"
+          ],
+          "percentOfEpisodes": 50
+        }
+      }
+    ],
+    "year": 1997,
+    "path": "/tv/King of the Hill",
+    "qualityProfileId": 1,
+    "seasonFolder": true,
+    "monitored": true,
+    "monitorNewItems": "all",
+    "useSceneNumbering": false,
+    "runtime": 25,
+    "tvdbId": 73903,
+    "tvRageId": 4134,
+    "tvMazeId": 115,
+    "tmdbId": 2122,
+    "firstAired": "1997-01-12T00:00:00Z",
+    "lastAired": "2026-07-20T00:00:00Z",
+    "seriesType": "standard",
+    "cleanTitle": "kinghill",
+    "imdbId": "tt0118375",
+    "titleSlug": "king-of-the-hill",
+    "rootFolderPath": "/tv",
+    "certification": "TV-PG",
+    "genres": [
+      "Animation",
+      "Comedy",
+      "Drama"
+    ],
+    "tags": [],
+    "added": "2025-02-10T08:17:34Z",
+    "ratings": {
+      "votes": 66841,
+      "value": 7.6
+    },
+    "statistics": {
+      "seasonCount": 15,
+      "episodeFileCount": 270,
+      "episodeCount": 275,
+      "totalEpisodeCount": 284,
+      "sizeOnDisk": 104920269158,
+      "releaseGroups": [
+        "INFINITY",
+        "SA89",
+        "QOQ",
+        "successfulcrab",
+        "SuccessfulCrab",
+        "CAKES",
+        "ETHEL",
+        "TRB"
+      ],
+      "percentOfEpisodes": 98.18181818181819
+    },
+    "languageProfileId": 1,
+    "id": 2
+  },
+  {
+    "title": "Adolescence",
+    "alternateTitles": [
+      {
+        "title": "Adolescence",
+        "seasonNumber": -1
+      }
+    ],
+    "sortTitle": "adolescence",
+    "status": "ended",
+    "ended": true,
+    "overview": "When a 13-year-old is accused of the murder of a classmate, his family, therapist and the detective in charge are all left asking: what really happened?",
+    "previousAiring": "2025-03-13T07:00:00Z",
+    "network": "Netflix",
+    "airTime": "03:00",
+    "images": [
+      {
+        "coverType": "banner",
+        "url": "/MediaCover/3/banner.jpg?lastWrite=638787677971275610",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/452467/banners/67bfe3a33b1e2.jpg"
+      },
+      {
+        "coverType": "poster",
+        "url": "/MediaCover/3/poster.jpg?lastWrite=638789062835017063",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/452467/posters/67d5949af3e89.jpg"
+      },
+      {
+        "coverType": "fanart",
+        "url": "/MediaCover/3/fanart.jpg?lastWrite=638787677971755616",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/452467/backgrounds/67d5d3ea54a66.jpg"
+      },
+      {
+        "coverType": "clearlogo",
+        "url": "/MediaCover/3/clearlogo.png?lastWrite=638787677971835617",
+        "remoteUrl": "https://artworks.thetvdb.com/banners/v4/series/452467/clearlogo/67d3e4ecb556f.png"
+      }
+    ],
+    "originalLanguage": {
+      "id": 1,
+      "name": "English"
+    },
+    "seasons": [
+      {
+        "seasonNumber": 0,
+        "monitored": false,
+        "statistics": {
+          "episodeFileCount": 0,
+          "episodeCount": 0,
+          "totalEpisodeCount": 8,
+          "sizeOnDisk": 0,
+          "releaseGroups": [],
+          "percentOfEpisodes": 0
+        }
+      },
+      {
+        "seasonNumber": 1,
+        "monitored": true,
+        "statistics": {
+          "previousAiring": "2025-03-13T07:00:00Z",
+          "episodeFileCount": 4,
+          "episodeCount": 4,
+          "totalEpisodeCount": 4,
+          "sizeOnDisk": 5001565300,
+          "releaseGroups": [
+            "KONTRAST"
+          ],
+          "percentOfEpisodes": 100
+        }
+      }
+    ],
+    "year": 2025,
+    "path": "/tv/Adolescence",
+    "qualityProfileId": 4,
+    "seasonFolder": true,
+    "monitored": true,
+    "monitorNewItems": "all",
+    "useSceneNumbering": false,
+    "runtime": 57,
+    "tvdbId": 452467,
+    "tvRageId": 0,
+    "tvMazeId": 78570,
+    "tmdbId": 249042,
+    "firstAired": "2025-03-13T00:00:00Z",
+    "lastAired": "2025-03-13T00:00:00Z",
+    "seriesType": "standard",
+    "cleanTitle": "adolescence",
+    "imdbId": "tt31806037",
+    "titleSlug": "adolescence",
+    "rootFolderPath": "/tv",
+    "certification": "12",
+    "genres": [
+      "Crime",
+      "Drama",
+      "Mini-Series",
+      "Thriller"
+    ],
+    "tags": [],
+    "added": "2025-03-28T14:09:56Z",
+    "ratings": {
+      "votes": 315612,
+      "value": 8.1
+    },
+    "statistics": {
+      "seasonCount": 1,
+      "episodeFileCount": 4,
+      "episodeCount": 4,
+      "totalEpisodeCount": 12,
+      "sizeOnDisk": 5001565300,
+      "releaseGroups": [
+        "KONTRAST"
+      ],
+      "percentOfEpisodes": 100
+    },
+    "languageProfileId": 1,
+    "id": 3
+  }
+]

@@ -1,0 +1,54 @@
+[
+  {
+    "Id": "df327b47ec012b85927f02a77e5c7f27bdd2690d1add03c02f1aedebb1e79f18",
+    "Names": [
+      "/prowlarr"
+    ],
+    "Image": "linuxserver/prowlarr:2.5.2.5491-ls159",
+    "ImageID": "sha256:36053f9b618cf31215ab55bc4c9b75b1ea4691f27c092ea9a3fd5bb6f3fb0bf2",
+    "Command": "/init",
+    "Created": 1789227214,
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 9696,
+        "PublicPort": 9696,
+        "Type": "tcp"
+      },
+      {
+        "IP": "::",
+        "PrivatePort": 9696,
+        "PublicPort": 9696,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 43 minutes (healthy)"
+  },
+  {
+    "Id": "2003f0a938aba30485c40ea7bf110b77962ba26f9abcc0ea4d1b4af6dd46007a",
+    "Names": [
+      "/tautulli"
+    ],
+    "Image": "linuxserver/tautulli:v2.18.1-ls244",
+    "ImageID": "sha256:d58ad9c1c70fecd27b0372b823f9a4b537c07f328f35240ed441d93abae680e5",
+    "Command": "/init",
+    "Created": 1789227214,
+    "Ports": [
+      {
+        "IP": "0.0.0.0",
+        "PrivatePort": 8181,
+        "PublicPort": 8181,
+        "Type": "tcp"
+      },
+      {
+        "IP": "::",
+        "PrivatePort": 8181,
+        "PublicPort": 8181,
+        "Type": "tcp"
+      }
+    ],
+    "State": "running",
+    "Status": "Up 43 minutes (healthy)"
+  }
+]
