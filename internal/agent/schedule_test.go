@@ -85,9 +85,7 @@ func expectedSpecs(t *testing.T, cfg config.Config, hasPeer, hasSender bool) []s
 }
 
 // assertEntriesMatchSpecs proves c holds exactly the given specs, compared
-// as a multiset of each spec's Next(scheduleT0) (order-independent: cron
-// doesn't promise entries come back in AddFunc order once running, and
-// Schedule makes no such promise either).
+// as a multiset of each spec's Next(scheduleT0) (order-independent).
 func assertEntriesMatchSpecs(t *testing.T, c *cron.Cron, specs []string) {
 	t.Helper()
 	entries := c.Entries()
@@ -114,54 +112,39 @@ func assertEntriesMatchSpecs(t *testing.T, c *cron.Cron, specs []string) {
 	}
 }
 
-func TestScheduleOnPiWithPeerAndSenderHasEveryEntry(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Peer = &peer.Fake{}
-		o.Sender = &notify.FakeSender{}
-	})
-
-	c, err := a.Schedule()
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
+// TestScheduleEntriesMatchConfiguration proves Schedule registers exactly
+// the entries this Peer/Sender/node combination calls for (the NAS, with
+// a Sender left nil per constraints.md, omits the digest entry).
+func TestScheduleEntriesMatchConfiguration(t *testing.T) {
+	cases := []struct {
+		name               string
+		node               config.Node
+		hasPeer, hasSender bool
+	}{
+		{"pi with peer and sender has every entry", config.NodePi, true, true},
+		{"nas omits digest", config.NodeNAS, true, false},
+		{"no peer omits heartbeat", config.NodePi, false, true},
+		{"neither peer nor sender", config.NodePi, false, false},
 	}
-	assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, true, true))
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newScheduleTestAgent(t, func(o *Options) {
+				o.Cfg = scheduleTestCfg(tc.node)
+				if tc.hasPeer {
+					o.Peer = &peer.Fake{}
+				}
+				if tc.hasSender {
+					o.Sender = &notify.FakeSender{}
+				}
+			})
 
-func TestScheduleOnNasOmitsDigest(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Cfg = scheduleTestCfg(config.NodeNAS)
-		o.Peer = &peer.Fake{}
-		o.Sender = nil // constraints.md: the NAS never calls the sender
-	})
-
-	c, err := a.Schedule()
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
+			c, err := a.Schedule()
+			if err != nil {
+				t.Fatalf("Schedule() err = %v", err)
+			}
+			assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, tc.hasPeer, tc.hasSender))
+		})
 	}
-	assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, true, false))
-}
-
-func TestScheduleOmitsHeartbeatWithoutPeer(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Peer = nil
-		o.Sender = &notify.FakeSender{}
-	})
-
-	c, err := a.Schedule()
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
-	}
-	assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, false, true))
-}
-
-func TestScheduleOmitsHeartbeatAndDigestWithNeither(t *testing.T) {
-	a := newScheduleTestAgent(t, nil) // no Peer, no Sender
-
-	c, err := a.Schedule()
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
-	}
-	assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, false, false))
 }
 
 // TestScheduleReturnsNotStartedCron proves Schedule never starts the
@@ -181,30 +164,22 @@ func TestScheduleReturnsNotStartedCron(t *testing.T) {
 	}
 }
 
-func TestScheduleRejectsInvalidTimezone(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) { o.Cfg.Agent.Timezone = "not/a/real/zone" })
-
-	if _, err := a.Schedule(); err == nil {
-		t.Fatal("Schedule() err = nil, want an error for an invalid timezone")
+func TestScheduleRejectsInvalidConfig(t *testing.T) {
+	cases := map[string]func(*Options){
+		"invalid timezone":      func(o *Options) { o.Cfg.Agent.Timezone = "not/a/real/zone" },
+		"invalid checkpoint_at": func(o *Options) { o.Cfg.Agent.CheckpointAt = "not-a-time" },
+		"invalid digest_at": func(o *Options) {
+			o.Sender = &notify.FakeSender{} // digest is only scheduled with a Sender
+			o.Cfg.Email.DigestAt = "not-a-time"
+		},
 	}
-}
-
-func TestScheduleRejectsInvalidCheckpointAt(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) { o.Cfg.Agent.CheckpointAt = "not-a-time" })
-
-	if _, err := a.Schedule(); err == nil {
-		t.Fatal("Schedule() err = nil, want an error for an invalid checkpoint_at")
-	}
-}
-
-func TestScheduleRejectsInvalidDigestAt(t *testing.T) {
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Sender = &notify.FakeSender{} // digest is only scheduled with a Sender
-		o.Cfg.Email.DigestAt = "not-a-time"
-	})
-
-	if _, err := a.Schedule(); err == nil {
-		t.Fatal("Schedule() err = nil, want an error for an invalid digest_at")
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := newScheduleTestAgent(t, mutate)
+			if _, err := a.Schedule(); err == nil {
+				t.Fatal("Schedule() err = nil, want an error")
+			}
+		})
 	}
 }
 
@@ -304,8 +279,7 @@ func TestScheduleDigestJobRuns(t *testing.T) {
 	}
 }
 
-// runAllJobs runs every entry's raw (unwrapped) Job synchronously, in
-// whatever order Entries() returns them.
+// runAllJobs runs every entry's raw (unwrapped) Job synchronously.
 func runAllJobs(c *cron.Cron) {
 	for _, e := range c.Entries() {
 		e.Job.Run()
@@ -390,8 +364,7 @@ func TestSendHeartbeatNilPeerIsNoop(t *testing.T) {
 }
 
 // TestSendHeartbeatPeerFailureLoggedNotFatal proves a peer push failure is
-// logged but never fails SendHeartbeat (constraints.md: an unreachable
-// peer is never fatal), mirroring pushReport's behaviour in cycle.go.
+// logged but never fails SendHeartbeat (an unreachable peer is never fatal).
 func TestSendHeartbeatPeerFailureLoggedNotFatal(t *testing.T) {
 	fs := &fakeStore{}
 	fp := &peer.Fake{Err: errors.New("peer down")}
