@@ -103,11 +103,41 @@ ssh nas 'kill "$(cat /volume1/docker/healarr/agent.pid)"'
 then re-run the Task Scheduler task. `healarr.prev` is kept alongside the live binary so a bad
 update can be rolled back by copying it back over `healarr` and restarting.
 
-## nginx
+## nginx (`/healarr/`)
 
-The `/healarr/` reverse-proxy snippet (proxying simplarr's nginx to the agent's web UI) is Phase 4
-scope — it ships once `internal/web/` exists. It will land as `deploy/nginx/healarr.conf.snippet`,
-added to simplarr's `split.conf`.
+`deploy/nginx/healarr.conf.snippet` proxies simplarr's nginx to healarr's web UI on the Pi. The
+location block goes **inside the existing `server {}` block** of simplarr's split config
+(e.g. `docker/simplarr/split.conf`).
+
+**Setup**:
+
+1. Back up the config: `sudo cp docker/simplarr/split.conf docker/simplarr/split.conf.bak`
+2. Open `docker/simplarr/split.conf` and add the snippet from `deploy/nginx/healarr.conf.snippet`
+   inside the `server {}` block (e.g. at the end, before the closing `}`), replacing `192.0.2.20`
+   with your Pi's LAN address.
+3. Test the config: `docker exec simplarr_nginx_1 nginx -t` (adjust container name if needed).
+   If valid, it prints `nginx: the configuration file ... is OK`.
+4. Reload nginx: `docker exec simplarr_nginx_1 nginx -s reload` (or full restart:
+   `docker restart simplarr_nginx_1`).
+5. Re-run the stack health probe to confirm healarr is reachable via `/healarr/`.
+
+**Verify access**:
+
+```bash
+# Without a session → 303 redirect to login
+curl -s -o /dev/null -w '%{http_code}' http://<pi>/healarr/            # 303 → /healarr/login
+
+# Login reads ?token= (only /login does) → 303 + a session cookie
+curl -si "http://<pi>/healarr/login?token=<web_token>" | head -5       # 303 + Set-Cookie: healarr_session=…
+```
+
+**The token appears in that URL** (and so in shell history, browser history, and any nginx
+access log that isn't disabled for it) — the snippet above disables `access_log` on
+`/healarr/login` for that reason. A POST-based login, so the token never has to appear in a URL
+at all, is a follow-up, not yet implemented.
+
+The same snippet should be contributed to the simplarr repository as a PR, so other users of the
+stack can pull it in a future simplarr release.
 
 ## Local verification
 

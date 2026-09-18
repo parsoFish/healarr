@@ -41,6 +41,12 @@ type Peer struct {
 type Web struct {
 	ListenAddr string `toml:"listen_addr"`
 	BasePath   string `toml:"base_path"`
+	// PublicURL is the digest email's BaseURL (e.g.
+	// "http://192.0.2.10/healarr"): the LAN address an operator's mail
+	// client can actually reach, which need not equal ListenAddr (a bind
+	// address such as "0.0.0.0:8091" isn't a URL a browser can open).
+	// "" (the default) omits the digest's "Decisions:" link entirely.
+	PublicURL string `toml:"public_url"`
 }
 
 // Email configures outbound mail via msmtp.
@@ -122,19 +128,63 @@ type Checks struct {
 	SeededMinAge              time.Duration `toml:"seeded_min_age"`
 }
 
+// Staleness configures the "is this title stale" scorer: one point weight
+// per row of the C6 table, plus the thresholds and per-title state
+// (owner, snooze) the decision workflow reads alongside the score.
+type Staleness struct {
+	DaysMaxPoints         float64 `toml:"days_max_points"`          // 40
+	DaysHorizon           int     `toml:"days_horizon"`             // 180
+	NeverWatchedAfterDays int     `toml:"never_watched_after_days"` // 30 (never watched & added > this => full days points)
+	WatchedFullPoints     float64 `toml:"watched_full_points"`      // +15
+	WatchedPartialPoints  float64 `toml:"watched_partial_points"`   // -10
+	EndedPoints           float64 `toml:"ended_points"`             // +10
+	ContinuingPoints      float64 `toml:"continuing_points"`        // -15
+	SizePointsPerGB       float64 `toml:"size_points_per_gb"`       // 0.1 (GB/10)
+	SizeMaxPoints         float64 `toml:"size_max_points"`          // 15
+	OtherRequesterPoints  float64 `toml:"other_requester_points"`   // +10
+	OwnerRequesterPoints  float64 `toml:"owner_requester_points"`   // -5
+	AgePointsPerDay       float64 `toml:"age_points_per_day"`       // 0.05
+	AgeMaxPoints          float64 `toml:"age_max_points"`           // 10
+	CandidateThreshold    float64 `toml:"candidate_threshold"`      // 70
+	WatchlistThreshold    float64 `toml:"watchlist_threshold"`      // 50
+	Owner                 string  `toml:"owner"`                    // Overseerr username/email of the owner ("" = unknown)
+	SnoozeDays            int     `toml:"snooze_days"`              // 60
+}
+
+// Cleanup configures the disk-cleanup executor's safety rails: how
+// cautious it is (dry_run) and how old something must be before it is
+// eligible for removal.
+type Cleanup struct {
+	DryRun         bool          `toml:"dry_run"`         // true
+	OrphanMinAge   time.Duration `toml:"orphan_min_age"`  // 168h
+	RecycleMinAge  time.Duration `toml:"recycle_min_age"` // 24h
+	DockerDangling bool          `toml:"docker_dangling"` // true (prune dangling only)
+}
+
+// Actions gates every mutating path (decision.Execute's delete branch,
+// cleanup.Execute, the NAS-side qbit_delete) behind an explicit opt-in.
+// Keep (snooze) is not a stack mutation and is always allowed. Default
+// false: it must stay false until the operator trusts the actions.
+type Actions struct {
+	Enabled bool `toml:"enabled"` // false
+}
+
 // Config is the full non-secret configuration for one node.
 type Config struct {
-	Node     Node     `toml:"node"`
-	Services Services `toml:"services"`
-	Peer     Peer     `toml:"peer"`
-	Web      Web      `toml:"web"`
-	Email    Email    `toml:"email"`
-	LLM      LLM      `toml:"llm"`
-	State    State    `toml:"state"`
-	Docker   Docker   `toml:"docker"`
-	Mounts   []Mount  `toml:"mounts"`
-	Checks   Checks   `toml:"checks"`
-	Agent    Agent    `toml:"agent"`
+	Node      Node      `toml:"node"`
+	Services  Services  `toml:"services"`
+	Peer      Peer      `toml:"peer"`
+	Web       Web       `toml:"web"`
+	Email     Email     `toml:"email"`
+	LLM       LLM       `toml:"llm"`
+	State     State     `toml:"state"`
+	Docker    Docker    `toml:"docker"`
+	Mounts    []Mount   `toml:"mounts"`
+	Checks    Checks    `toml:"checks"`
+	Agent     Agent     `toml:"agent"`
+	Staleness Staleness `toml:"staleness"`
+	Cleanup   Cleanup   `toml:"cleanup"`
+	Actions   Actions   `toml:"actions"`
 }
 
 // Location resolves the timezone the daemon's schedules run in. An empty

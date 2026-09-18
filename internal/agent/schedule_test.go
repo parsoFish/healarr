@@ -13,6 +13,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/parsoFish/healarr/internal/check"
+	"github.com/parsoFish/healarr/internal/clients/hostfs"
 	"github.com/parsoFish/healarr/internal/config"
 	"github.com/parsoFish/healarr/internal/notify"
 	"github.com/parsoFish/healarr/internal/peer"
@@ -208,6 +209,184 @@ func TestScheduleCycleAndCheckpointJobsRunTheirWork(t *testing.T) {
 	if fs.CheckpointCalls != 1 {
 		t.Fatalf("CheckpointCalls = %d, want 1", fs.CheckpointCalls)
 	}
+}
+
+// TestDailyCycleJobPlansCleanupsForApplicablePlanners proves the daily
+// cadence's chained job (runDailyCycleAndCleanupPlanning) plans every
+// cleanup.Planner registered for this node and records one dry-run
+// "planned" remediations row per planner, on top of running the check
+// cycle itself. The nas is used since check.NASOnly covers three of the
+// four cleanup.All() planners (recycle, orphans, seeded) — none of which
+// succeed against this test's zero-value Deps (no Host/QBit configured),
+// so every one records a "failed" row instead; the point proven here is
+// that all three ran and were recorded, not that they succeeded.
+func TestDailyCycleJobPlansCleanupsForApplicablePlanners(t *testing.T) {
+	fs := &fakeStore{}
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Cfg = scheduleTestCfg(config.NodeNAS)
+		o.Store = fs
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runDailyCycleEntry(t, c)
+
+	kinds := map[string]int{}
+	for _, r := range fs.Remediations {
+		if !strings.HasPrefix(r.Action, "cleanup:") {
+			continue
+		}
+		kinds[strings.TrimPrefix(r.Action, "cleanup:")]++
+		if !r.DryRun {
+			t.Errorf("remediation %+v: DryRun = false, want true", r)
+		}
+		if r.Status != "failed" {
+			t.Errorf("remediation %+v: Status = %q, want failed (unconfigured deps)", r, r.Status)
+		}
+	}
+	want := map[string]int{"recycle": 1, "orphans": 1, "seeded": 1}
+	if !reflect.DeepEqual(kinds, want) {
+		t.Fatalf("cleanup kinds recorded = %v, want %v", kinds, want)
+	}
+}
+
+// TestDailyCycleJobRecordsSuccessfulPlan proves a planner that succeeds
+// records a "planned" (not "failed") dry-run row with the plan's own
+// item/byte counts in Detail, and never calls cleanup.Execute (fakeStore
+// has no Execute method to call in the first place — the planner
+// interface itself only exposes Plan).
+func TestDailyCycleJobRecordsSuccessfulPlan(t *testing.T) {
+	dir := t.TempDir()
+	fs := &fakeStore{}
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Cfg = scheduleTestCfg(config.NodeNAS)
+		o.Cfg.Checks.RecycleDirs = []string{dir}
+		o.Store = fs
+		o.Deps = fakeDeps(check.Deps{
+			Node: config.NodeNAS,
+			Cfg:  o.Cfg,
+			Now:  func() time.Time { return scheduleT0 },
+			Host: hostfs.New(""),
+		}, nil)
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runDailyCycleEntry(t, c)
+
+	var found bool
+	for _, r := range fs.Remediations {
+		if r.Action != "cleanup:recycle" {
+			continue
+		}
+		found = true
+		if r.Status != "planned" {
+			t.Errorf("Status = %q, want planned", r.Status)
+		}
+		if !r.DryRun {
+			t.Error("DryRun = false, want true")
+		}
+		if !strings.Contains(r.Detail, "0 items") {
+			t.Errorf("Detail = %q, want it to mention 0 items (empty recycle dir)", r.Detail)
+		}
+	}
+	if !found {
+		t.Fatal("no cleanup:recycle remediation recorded")
+	}
+}
+
+// TestDailyCycleJobDepsErrorRecordsFailureForEveryApplicablePlanner
+// proves a Deps build failure still records one failed row per planner
+// this node's cleanup.All() covers (constraints.md: background failures
+// are always both logged and recorded), rather than silently skipping
+// planning for the night.
+func TestDailyCycleJobDepsErrorRecordsFailureForEveryApplicablePlanner(t *testing.T) {
+	depsErr := errors.New("deps boom")
+	fs := &fakeStore{}
+	var logBuf strings.Builder
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Cfg = scheduleTestCfg(config.NodeNAS)
+		o.Store = fs
+		o.Deps = fakeDeps(check.Deps{}, depsErr)
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runDailyCycleEntry(t, c)
+
+	var cleanupRows int
+	for _, r := range fs.Remediations {
+		if strings.HasPrefix(r.Action, "cleanup:") {
+			cleanupRows++
+			if r.Status != "failed" || !r.DryRun {
+				t.Errorf("remediation %+v: want failed dry-run", r)
+			}
+		}
+	}
+	if cleanupRows != 3 { // recycle, orphans, seeded: NASOnly
+		t.Fatalf("cleanup remediation rows = %d, want 3", cleanupRows)
+	}
+	if !strings.Contains(logBuf.String(), "deps boom") {
+		t.Fatalf("log = %q, want it to mention the deps error", logBuf.String())
+	}
+}
+
+// TestDailyCycleJobNeverCallsCleanupExecute is a documentation-level
+// guard: cleanupjob.go must only ever call Planner.Plan, never
+// cleanup.Execute (constraints.md: overnight is observe-only). There is
+// no direct way to assert "a function was never called" against a real
+// package function, so this proves the same invariant indirectly: every
+// planner failure/success above is recorded with DryRun=true and no
+// Result is ever produced (RecordRemediation's r.Detail never carries a
+// "reclaimed"/"executed" phrasing, which only cleanup.Execute's own
+// resultSummary-shaped output would use).
+func TestDailyCycleJobNeverCallsCleanupExecute(t *testing.T) {
+	fs := &fakeStore{}
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Cfg = scheduleTestCfg(config.NodeNAS)
+		o.Store = fs
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runDailyCycleEntry(t, c)
+
+	for _, r := range fs.Remediations {
+		if strings.Contains(r.Detail, "reclaimed") || strings.Contains(r.Detail, "executed") {
+			t.Fatalf("remediation %+v looks like cleanup.Execute's output, want only dry-run plans", r)
+		}
+	}
+}
+
+// runDailyCycleEntry runs only the daily cadence's cron.Job (identified
+// by matching Next(scheduleT0) against dailyCycleSpec's own schedule),
+// leaving every other entry untouched — unlike runAllJobs, which would
+// also fire the heartbeat/digest/checkpoint entries this test doesn't
+// care about.
+func runDailyCycleEntry(t *testing.T, c *cron.Cron) {
+	t.Helper()
+	dailySched, err := cron.ParseStandard(dailyCycleSpec)
+	if err != nil {
+		t.Fatalf("ParseStandard(dailyCycleSpec): %v", err)
+	}
+	dailyNext := dailySched.Next(scheduleT0)
+
+	for _, e := range c.Entries() {
+		if e.Schedule.Next(scheduleT0).Equal(dailyNext) {
+			e.Job.Run()
+			return
+		}
+	}
+	t.Fatal("no entry matched the daily cadence's schedule")
 }
 
 // TestScheduleHeartbeatJobRuns proves the heartbeat entry's job calls

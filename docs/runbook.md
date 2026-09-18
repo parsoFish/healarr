@@ -35,7 +35,7 @@ Healarr's Docker checks call the Engine API directly over the Unix socket using 
 
 ## Verifying a running install
 
-- `healarr config validate --config <path>` — confirms both files parse, secrets permissions are correct, and lists which services/mounts were found (never prints key values).
+- `healarr config validate --config <path>` — confirms both files parse, secrets permissions are correct, and lists which services/mounts were found, plus the current `actions_enabled`/`cleanup_dry_run` flags and the staleness candidate/watchlist thresholds (never prints key values).
 - `healarr docker ps` — confirms the Docker socket is reachable and shows what's actually running, independent of what simplarr's own compose state thinks.
 - `healarr host mounts` — confirms the host's mount table looks like what's expected; this is the check that would have caught the 2026-09-12 mount-race incident (see `docs/superpowers/specs/2026-09-12-go-rewrite-design.md`).
 
@@ -45,7 +45,7 @@ Phase 2 shipped the check engine (`internal/check` + `internal/checks/*`) and th
 
 ### The catalogue
 
-`healarr check list [--json]` prints every registered check: id, node(s), tier, and cadence (the interval Phase 3's daemon will use — the CLI itself does not schedule anything). The catalogue is 21 checks, each applying to `pi`, `nas`, or both:
+`healarr check list [--json]` prints every registered check: id, node(s), tier, and cadence (the interval Phase 3's daemon will use — the CLI itself does not schedule anything). The catalogue is 22 checks, each applying to `pi`, `nas`, or both:
 
 | Check ID | Node(s) | Cadence |
 |---|---|---|
@@ -70,8 +70,9 @@ Phase 2 shipped the check engine (`internal/check` + `internal/checks/*`) and th
 | `orphan_downloads` | nas | 24h |
 | `seeded_done` | nas | 24h |
 | `service_update_available` | pi, nas | 24h |
+| `staleness_scan` | pi | 24h |
 
-(`staleness_scan` from the spec's C5 table is intentionally not here — it's Phase 4 scope, alongside the staleness scorer of ADR-016.)
+`staleness_scan` (added in Phase 4, ADR-016) is the one row whose findings carry more than a summary line — each one's `Data` holds the full score/component breakdown, size, last-watch time and requester, which is what the "Decisions" section below and `healarr staleness score` both read. See that section for what it feeds.
 
 ### Running checks and generating the digest
 
@@ -115,16 +116,20 @@ A check that errored or was skipped never resolves anything under its own id —
 
 ## Daily operations
 
-- **Digest email**: since Phase 3, a daily digest at `email.digest_at` (default `07:00` local) summarises both nodes' findings; see "Daemon operations" below. Ad hoc, `healarr report generate` still produces the same digest text by hand for this node alone (see above).
-- **Decisions page**: once Phase 4 ships, staleness candidates and gated Correct-tier actions are approved or rejected from `/healarr/` on the LAN — no email reply, no IMAP. Phase 3's peer channel already carries a `decisions` endpoint, but nothing acts on it yet (ADR-018) — it only records what's received.
+- **Digest email**: since Phase 3, a daily digest at `email.digest_at` (default `07:00` local) summarises both nodes' findings, plus (since Phase 4) a STALENESS section, a CLEANUP (dry-run plans) section, and a pending-decisions count; see "Daemon operations" below. Ad hoc, `healarr report generate` still produces the same digest text by hand for this node alone (see above).
+- **Decisions page**: staleness candidates are kept or deleted from `/healarr/decisions` on the LAN — no email reply, no IMAP. See "Web UI" and "Decisions" below.
 
 ## Daemon operations
 
 Phase 3 added the long-running daemon, `healarr agent serve`, which both nodes run instead of
-invoking `check run`/`report generate` by hand. It is **observe-only**: every check cycle,
-heartbeat, and peer push it runs persists a report or a peer message and (on the Pi) mails a
-digest, but nothing in this phase blocks a torrent, deletes a file, or otherwise remediates
-anything — that's Phase 4.
+invoking `check run`/`report generate` by hand. Every check cycle, heartbeat, and peer push it
+runs persists a report or a peer message and (on the Pi) mails a digest. Since Phase 4, the daily
+check cycle is followed by cleanup planning (every registered planner for this node runs
+read-only and records a dry-run `remediations` row — the daemon itself never executes a cleanup
+overnight, no matter what `actions.enabled`/`cleanup.dry_run` say), and, on the Pi only, `agent
+serve` also hosts the `/healarr/` web UI (see "Web UI" below) — that's the one surface where a
+keep/delete decision can actually execute for real, gated behind the actions gate (ADR-019). See
+"Cleanups and the actions gate" for how to move from dry-run to live on purpose.
 
 ### Lifecycle
 
@@ -138,7 +143,7 @@ anything — that's Phase 4.
 
 - **Pi**: `journalctl -u healarr -f` (add `--since today` to scope it).
 - **NAS**: `ssh nas tail -f /volume1/docker/healarr/agent.log` — there's no `journalctl` on DSM; this is the boot script's own `nohup` redirect.
-- Normal operation is logged, not just failures: one `agent: starting` line per start (node, version, timezone, peer listen address, whether the peer/heartbeat/digest are wired, `digest_at`, `checkpoint_at`, and the number of cron entries registered), then one line per completed check cycle (cadence, checks run/failed, findings, report id, whether the push to the peer succeeded), per digest sent (outbox id, subject) and per nightly checkpoint (rows pruned). A node that is up but silent between these lines is a node whose scheduler isn't firing.
+- Normal operation is logged, not just failures: one `agent: starting` line per start (node, version, timezone, peer listen address, whether the peer/heartbeat/digest are wired, whether the web UI is enabled and its listen address, `digest_at`, `checkpoint_at`, and the number of cron entries registered), then one line per completed check cycle (cadence, checks run/failed, findings, report id, whether the push to the peer succeeded), per digest sent (outbox id, subject), per cleanup plan recorded (kind, items, bytes) and per nightly checkpoint (rows pruned). A node that is up but silent between these lines is a node whose scheduler isn't firing.
 - Every scheduled job logs its own failures through the daemon's structured logger rather than crashing it: a panicking job is recovered and logged (`cron.Recover`), and an overlapping run of the same job is skipped and logged rather than left to pile up (`cron.SkipIfStillRunning`).
 
 ### Schedule
@@ -180,6 +185,136 @@ A digest whose send fails is marked `failed` in `email_outbox` (with the error t
 ### Phase 2 leftover: the `wrong_file_type` inspect-errors finding
 
 Unrelated to the daemon, but worth knowing before it shows up in a daemon-driven digest: `wrong_file_type` (nas, 15m) rolls every torrent whose files qBittorrent couldn't describe this run (a magnet whose metadata never arrived, a torrent removed mid-run) into a single warn/observe finding at entity key `qbit:wrong_file_type:inspect-errors`, rather than emitting one per torrent or letting one bad torrent hide fake releases in the rest of the run's findings. It's informational — check qBittorrent if it persists across cycles — and resolves itself once a later cycle can describe those torrents again (or they've been removed).
+
+## Web UI
+
+Since Phase 4, `healarr agent serve` on the Pi (and only the Pi — ADR-014/015) also serves a
+LAN-only dashboard/decisions/history UI (`internal/web`), mounted at `web.base_path` (default
+`/healarr`) on `web.listen_addr` (default `0.0.0.0:8091`). An empty `base_path` (`""`) falls
+back to that same default rather than mounting at the root — set it to `"/"` if you actually
+want the UI at the root. It requires `secrets.toml`'s `web_token`; `agent serve` refuses to
+start on the Pi without one (`"agent serve: pi requires secrets.web_token to serve the web ui"`).
+
+- **Login**: `GET <base>/login?token=<web_token>` checks the token (constant-time compare),
+  sets an `HttpOnly`, `SameSite=Strict` session cookie (`healarr_session`) good for 30 days, and
+  redirects to the dashboard; `GET <base>/login` with no `token` query param renders a login
+  form instead. **The token appears in that URL** — shell history, browser history, and any
+  reverse-proxy access log that isn't disabled for it (see `deploy/nginx/healarr.conf.snippet`'s
+  `/healarr/login` block, which disables logging for this reason). A POST-based login is a
+  follow-up, not yet implemented. **Sessions live only in the daemon's memory** — restarting
+  `agent serve` (a deploy, a crash, a reboot) signs every browser out; there is no session store
+  to persist, by design (ADR-019). A GET without a valid session cookie redirects to `/login`; a
+  POST without one gets a bare 401.
+- **CSRF**: every POST (the decisions form, logout) also requires a `csrf` form field, a value
+  derived per-session and checked with a constant-time compare — a bookmarked or copy-pasted
+  form action never resubmits successfully on its own.
+- **Pages**: `/` (dashboard — both nodes' latest report, disk gauges, open findings by
+  severity, peer heartbeat age), `/decisions` (see "Decisions" below), `/history` (7-day finding
+  history and remediation log for both nodes).
+- **Reverse proxy**: `deploy/nginx/healarr.conf.snippet` (see
+  `deploy/README.md`'s nginx section) proxies simplarr's existing reverse proxy's `/healarr/`
+  location to the Pi's `:8091`. `web.public_url` in `config.toml` (e.g.
+  `http://192.0.2.10/healarr` — substitute your Pi's actual LAN address; `192.0.2.0/24` is an
+  RFC 5737 documentation range, not a real one) is what the daily digest's
+  `Decisions: <url>/decisions` line links to; leave it `""` (the default) to omit that line
+  entirely.
+- **Verifying**: `curl -i "http://192.0.2.10:8091/healarr/login?token=<web_token>"` should
+  return a `Set-Cookie: healarr_session=…` header and a redirect to `/healarr/`; a bare
+  `curl -i "http://192.0.2.10:8091/healarr/"` with no cookie should 303-redirect to
+  `/healarr/login`.
+
+## Decisions
+
+`/healarr/decisions` is where staleness candidates get kept or deleted. It lists every open (not
+snoozed) `staleness_scan` finding scoring at or above `staleness.watchlist_threshold`, sorted
+score descending, with the title, score, band, all six scoring components, size, last-watched
+time and Overseerr requester and a Keep / Delete button per row — the CLI's `healarr staleness
+score` prints only the top two components (`TopComponents`), not the same breakdown.
+
+- **Keep** snoozes the entity for `staleness.snooze_days` (default 60) and is never gated by
+  `actions.enabled` — snoozing a finding doesn't touch the media stack. While snoozed, the
+  finding drops off this page and the digest's STALENESS section entirely, reappearing once
+  `staleness.snooze_days` has elapsed.
+- **Delete** deletes the series/movie from Sonarr/Radarr with files and an import-list
+  exclusion, best-effort declines any matching Overseerr request, and best-effort sends a
+  `qbit_delete` hint to the peer node so its torrent-client bookkeeping gets cleaned up too — but
+  only when `actions.enabled` is true. When it's false, the click is still recorded (nothing is
+  silently dropped) but the page shows "Recorded — actions are disabled in config, so it was not
+  executed." instead of running anything, and the actions-disabled banner at the top of the page
+  says the same up front.
+- The page also shows recent Blocked/Executed delete outcomes (read from `remediations`, last 7
+  days) and a **read-only** "Cleanup plans" table — see "Cleanups and the actions gate" below;
+  there is no execute button for a cleanup plan on this page yet.
+- The same two actions are available without the web UI: `healarr staleness score [--json]
+  [--min <score>]` previews the score table read-only (it never opens the store — safe to run any
+  time), and `healarr decide keep <entity-key> [--snooze <days>]` / `healarr decide delete
+  <entity-key>` do exactly what the matching web button does, including the same
+  `actions.enabled` gate on delete (`--snooze` only applies to `keep`; it overrides
+  `staleness.snooze_days` for that one decision).
+- **Known limitations** (accepted, not bugs): staleness scoring matches Tautulli watch history to
+  Sonarr/Radarr titles by case-insensitive title string, not a rating-key crosswalk — a re-titled
+  or differently-punctuated entry on either side simply won't match. And a series/movie counts as
+  "fully watched" if *any* matched history row was a full watch, with no episode-level
+  aggregation — a show binged for one season and ignored for four others still reads as fully
+  watched.
+
+## Cleanups and the actions gate
+
+`healarr cleanup <recycle|orphans|docker|seeded> [--json]` plans (always) and, when allowed,
+executes one cleanup kind. `docker` runs on the Pi; `recycle`, `orphans` and `seeded` run on the
+NAS — running a kind on the wrong node fails fast (`"cleanup: <kind> does not run on node
+<node>"`). The same four planners also run automatically, read-only, every night right after the
+00:10 daily check cycle (`internal/agent/cleanupjob.go`) — every plan that run produces is
+recorded as a dry-run `remediations` row (`cleanup:<kind>`) regardless of config, so the digest's
+"CLEANUP (dry-run plans)" section and the decisions page's "Cleanup plans" table always have
+something to show even if the gate has never been touched.
+
+The gate is exactly two config flags, checked together by `cleanup.Execute` — `actions.enabled &&
+!cleanup.dry_run` — and by nothing else:
+
+- `[actions] enabled` (default `false`): the master switch for every mutating path in the whole
+  binary — `cleanup.Execute`, the staleness decision executor's delete branch, and the NAS's
+  `qbit_delete` peer handler. It is one switch, not one per subsystem (ADR-019): flipping it turns
+  on all of them at once.
+- `[cleanup] dry_run` (default `true`): cleanup's own, additional conservative default. Even with
+  `actions.enabled = true`, a cleanup plan will not execute while this stays `true`.
+
+Running `healarr cleanup <kind>` without `--dry-run` always plans and always records one
+`remediations` row; whether it also executes depends on both flags, reflected in the row's (and
+the CLI output's) `status`:
+
+| `actions.enabled` | `cleanup.dry_run` | Result |
+|---|---|---|
+| `false` | (either) | `status: blocked` — plan recorded, nothing executed |
+| `true` | `true` | `status: planned` — plan recorded, nothing executed |
+| `true` | `false` | `status: executed` — `cleanup.Execute` actually runs |
+
+The CLI's global `--dry-run` flag is stricter still: `healarr cleanup <kind> --dry-run` never
+opens the store at all, so it is the only way to preview a plan (`status: planned`) without
+leaving a trace in `remediations`.
+
+**How to flip the gate safely:**
+
+1. Watch dry-run plans accumulate for a while — `healarr cleanup <kind> --dry-run --json` by
+   hand, the digest's "CLEANUP (dry-run plans)" section, or the decisions page's read-only
+   "Cleanup plans" table (all backed by the same nightly job, so there's no need to run anything
+   by hand just to see what it would do).
+2. If you also want staleness deletes to execute, watch those the same way — via
+   `healarr staleness score` and the decisions page's candidate list — since dry-run doesn't apply
+   to `decide delete`/the Delete button; a delete either executes or is blocked, there's no
+   planned-but-not-executed state for it the way there is for cleanups.
+3. Once you trust what you're seeing, in `config.toml` set **both** `[actions] enabled = true`
+   and `[cleanup] dry_run = false`. Leaving either at its default keeps every cleanup planner at
+   `blocked`/`planned`.
+4. Restart `agent serve` (`systemctl restart healarr` on the Pi; re-run the DSM Task Scheduler
+   task on the NAS) so the daemon's nightly job and the web UI's decision executor pick up the
+   new config; the CLI verbs (`cleanup`, `decide`) reload config on every invocation, so they take
+   effect immediately without a restart.
+5. There is no per-kind promotion — `actions.enabled` is global (ADR-019). Trusting only one
+   cleanup kind (or staleness deletes but not cleanups, or vice versa) isn't possible with
+   today's config; flipping the gate turns on every mutating path this binary has. If that's not
+   what you want yet, leave it closed and keep reviewing dry-run plans until you're ready for all
+   of them.
 
 ## Common scenarios
 

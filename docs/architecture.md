@@ -70,16 +70,20 @@ internal/clients/{sonarr,radarr,prowlarr,
 internal/check/                           Check struct, Registry + Run (the runner), Finding/Report/Result types,
                                              Deps (incl. Deps.Previous for delta checks) — pure, store-agnostic (ADR-017)
 internal/checks/{arr,disk,indexers,mounts,
-  plex,qbit,requests}/                    one check family per dir, 21 checks total, table-tested against fixtures
-internal/staleness/                       score formula (pure function, ADR-016), candidate selection
-internal/cleanup/                         recycle-bin / orphan / seeded-torrent / docker-prune actions (dry-run first)
-internal/decision/                        keep/delete/approve/reject executor (arr delete-with-files, overseerr sync)
+  plex,qbit,requests}/                    one check family per dir, 22 checks total (incl. staleness_scan), table-tested against fixtures
+internal/staleness/                       score formula (pure function, ADR-016), Collect (Sonarr/Radarr+Tautulli+Overseerr join),
+                                             staleness_scan check
+internal/cleanup/                         recycle-bin / orphan / seeded-torrent / docker-prune planners; Execute gated behind
+                                             actions.enabled && !cleanup.dry_run (ADR-019), path-prefix safety on host removes
+internal/decision/                        keep/delete executor (ADR-016): keep snoozes, delete runs arr delete-with-files +
+                                             import-list exclusion + best-effort overseerr decline + peer qbit_delete hint, gated (ADR-019)
 internal/store/                           modernc.org/sqlite, embedded migrations, dedup/resolve on SaveReport (ADR-017)
 internal/peer/                            HTTP server+client, bearer token, message types (ADR-015)
-internal/agent/                           daemon: cron, orchestration, digest reconciliation, guards
+internal/agent/                           daemon: cron, orchestration, digest reconciliation, daily cleanup planning, web hosting, guards
 internal/notify/                          msmtp shell-out, digest templates
 internal/llm/                             single daily Haiku call, cost log, templated fallback
-internal/web/                             html/template + minimal JS; dashboard, decisions, history (ADR-014)
+internal/web/                             html/template, no JS; token-cookie auth, in-memory sessions; dashboard, decisions,
+                                             history (ADR-014)
 internal/cli/                             cobra subcommands per service (`healarr <service> <verb>`)
 deploy/systemd/healarr.service            Pi unit (User=parso, After=docker.service)
 deploy/dsm/healarr-boot.sh                NAS Task Scheduler boot-up script (absolute paths, no $HOME)
@@ -88,7 +92,7 @@ deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http:
 
 `internal/clients/*` and `internal/cli/*` are what Phase 1 (this repo state) delivers: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
 
-`internal/check` (the runner: `Registry`, `Run`, `Deps`, `Finding`/`Report`/`Result`) and `internal/checks/*` (the 21 check implementations, one family per client) are what Phase 2 delivers, together with `internal/store` and the `healarr check`/`report` CLI verbs — see ADR-017 and the "State store" section below for the store side, and `docs/runbook.md`'s "Running checks by hand" for the CLI.
+`internal/check` (the runner: `Registry`, `Run`, `Deps`, `Finding`/`Report`/`Result`) and `internal/checks/*` (21 check implementations, one family per client) are what Phase 2 delivers, together with `internal/store` and the `healarr check`/`report` CLI verbs — see ADR-017 and the "State store" section below for the store side, and `docs/runbook.md`'s "Running checks by hand" for the CLI. Phase 4 adds the catalogue's 22nd check, `staleness_scan` (`internal/staleness/`, ADR-016) — see the "Decisions" section below.
 
 ### Check tiers (unchanged concept from the Python design — ADR-006)
 
@@ -96,23 +100,23 @@ Every check still classifies its possible remediation by blast radius, same four
 
 - **Observe** (read-only) — always runs, always safe
 - **Nudge** (reversible, no data loss) — auto-executes (retry import, reannounce, trigger scan)
-- **Correct** (destructive but reversible) — gated: dry-run by default until promoted, then executes or awaits a decision on `/healarr/`
+- **Correct** (destructive but reversible) — cleanup planners always plan read-only and are recorded as a dry-run row every night; execution behind them is gated on the single `actions.enabled` config switch (ADR-019), never a per-plan promotion
 - **Escalate** (high blast radius) — never auto-executes; surfaces as a decision for a human (staleness candidates, ADR-016)
 
 ### State store (`internal/store/`)
 
-SQLite via `modernc.org/sqlite` (ADR-013). `store.Open` sets `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, and a 5s `busy_timeout`, pins the connection pool to one connection, and applies any pending embedded migration — the Pi's SD card and the NAS's flash both make write amplification and multi-writer contention worth avoiding. `internal/store/migrations/0001_init.sql` creates every table below in one shot (Phase 2 only reads/writes `reports` and `findings`; later phases add columns, not tables):
+SQLite via `modernc.org/sqlite` (ADR-013). `store.Open` sets `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, and a 5s `busy_timeout`, pins the connection pool to one connection, and applies any pending embedded migration — the Pi's SD card and the NAS's flash both make write amplification and multi-writer contention worth avoiding. `internal/store/migrations/0001_init.sql` creates every table below in one shot, all the way back in Phase 2 — every later phase has added columns and reads/writes, never a new table:
 
-| Table | Purpose | Phase 2 status |
+| Table | Purpose | Status |
 |---|---|---|
-| `reports` | one row per node per check run (`ran`/`skipped`/`errors`/`metrics` as JSON columns) | written by `SaveReport` |
-| `findings` | check outputs, deduped on `(node, check_id, entity_key)` while `status ∈ open\|snoozed`, auto-resolved when a successful check stops emitting them (ADR-017) | written by `SaveReport` |
-| `remediations` | executed tool calls + outcomes (was `actions`) | unused |
-| `decisions` | staleness keep/delete and other human decisions (`pending\|executed\|failed`, `snooze_until`) | unused |
-| `peer_messages` | inbound/outbound peer protocol log | unused |
-| `staleness_scores` | per-entity score + component breakdown (ADR-016) | unused |
-| `llm_calls` | daily digest LLM calls + cost | unused |
-| `email_outbox` | sent digest emails | unused |
+| `reports` | one row per node per check run (`ran`/`skipped`/`errors`/`metrics` as JSON columns) | written by `SaveReport` (Phase 2) |
+| `findings` | check outputs, deduped on `(node, check_id, entity_key)` while `status ∈ open\|snoozed`, auto-resolved when a successful check stops emitting them (ADR-017) | written by `SaveReport`; `staleness_scan` findings additionally carry the score+components breakdown in `Data` (Phase 4, ADR-019) |
+| `remediations` | executed tool calls + outcomes (was `actions`) | written by `cleanup <kind>`/the nightly cleanup job/`decide`/the web decision executor/the NAS `qbit_delete` handler (Phase 4) |
+| `decisions` | staleness keep/delete decisions (`pending\|executed\|failed\|blocked`, `snooze_until`) | written by `decide`/the web UI's `/decisions` POST (Phase 4) |
+| `peer_messages` | inbound/outbound peer protocol log | written by the peer client/server (Phase 3) |
+| `staleness_scores` | per-entity score + component breakdown (ADR-016) | deliberately unused — `staleness_scan` findings carry the score instead (Phase 4, ADR-019) |
+| `llm_calls` | daily digest LLM calls + cost | unused (Phase 5) |
+| `email_outbox` | sent digest emails | written by the digest sender (Phase 3) |
 | `schema_meta` | applied migration version | written by `migrate` |
 
 `SaveReport(ctx, check.Report)` inserts the report row and upserts its findings in one transaction; `LatestReport` and `OpenFindings` are the two reads `check run` (delta checks' baseline) and `report generate` (digest input) use. See `docs/runbook.md`'s "Running checks by hand" for the exact dedup/resolve mechanics and CLI usage.
@@ -125,7 +129,7 @@ Outbound email via msmtp only (ADR-004 unchanged) — reuses the host's existing
 
 ### Daemon (`internal/agent/`)
 
-Both nodes run one long-running process, `healarr agent serve`, wired to this node's own check registry, store, and — on the Pi only — a mail sender. `Run` starts the peer HTTP server (when `peer.listen_addr` is configured), builds the cron scheduler, runs one check cycle immediately (so a restart isn't stale for up to 5 minutes), then blocks until SIGINT/SIGTERM or the peer server fails to bind. Shutdown is graceful: the scheduler waits for any in-flight job, and the peer server waits up to 5s for in-flight requests before its listener closes. The daemon is **observe-only** in Phase 3 — every job persists a report, a peer message, or a digest, but nothing it does blocks, deletes, or otherwise remediates anything; Phase 4 adds the executor.
+Both nodes run one long-running process, `healarr agent serve`, wired to this node's own check registry, store, and — on the Pi only — a mail sender and (since Phase 4) the web UI. `Run` starts the peer HTTP server (when `peer.listen_addr` is configured) and, on the Pi, the web server (when `web_token` is set — see "Decisions" below), builds the cron scheduler, runs one check cycle immediately (so a restart isn't stale for up to 5 minutes), then blocks until SIGINT/SIGTERM or either server fails to bind. Shutdown is graceful: the scheduler waits for any in-flight job, and both the peer and web servers wait up to 5s for in-flight requests before their listeners close. The daemon's own scheduled jobs stay **observe-only** even in Phase 4: the daily cycle's cleanup planning (`internal/agent/cleanupjob.go`) always plans read-only and records a dry-run row, never calling `cleanup.Execute`, regardless of the actions gate. The only path that can execute a mutation for real is a foreground one — the web UI's decision executor, or the `cleanup`/`decide` CLI verbs — and only when `actions.enabled` (ADR-019) allows it.
 
 The scheduler (`schedule.go`) registers five kinds of job, every one wrapped with `cron.Recover` (a panicking job is logged, never fatal) and `cron.SkipIfStillRunning` (an overlapping run is skipped and logged, never queued):
 
@@ -142,14 +146,16 @@ Peer traffic (`internal/peer/`) is four bearer-token-authenticated HTTP routes: 
 
 The daily digest (`agent.SendDigest`, rendered by `internal/notify/`) merges this node's own latest report and open findings with the peer's contribution — built entirely from what the peer has already **pushed** into this node's own store (`peer_messages`/`findings` under the peer's node), never a read-time pull. An unreachable or silent peer never blocks the digest: it renders "peer stale since …" (last pushed report older than `agent.peer_stale_after`, default `15m`) or "no report received" (nothing pushed, ever) in place of that section instead.
 
-### Decisions (`internal/web/`, `internal/decision/`)
+### Decisions (`internal/web/`, `internal/decision/`, `internal/staleness/`, `internal/cleanup/`)
 
-The `/healarr/` page (Pi, LAN-only, behind the existing simplarr nginx) replaces the old email-reply approval flow (ADR-014). It shows the latest reconciled digest, both nodes' heartbeats, pending Correct-tier actions, and staleness candidates (ADR-016). A keep/delete/approve/reject click writes a `decisions` row; delete routes through Sonarr/Radarr's delete-with-files endpoint so *arr state and disk stay consistent, and notifies the peer if the file lives on the other node.
+The `/healarr/` app (Pi, LAN-only, behind the existing simplarr nginx, `web.listen_addr` default `0.0.0.0:8091`) replaces the old email-reply approval flow (ADR-014). A token login (`GET /login?token=` against `secrets.toml`'s `web_token`) sets an in-memory session cookie (`healarr_session`, 30 days, lost on daemon restart — a deliberate trade-off, ADR-019); every page requires it and every POST additionally requires a per-session CSRF field. Three pages: the dashboard (both nodes' latest report, disk gauges, open findings by severity, peer heartbeat age), `/decisions` (staleness candidates from `staleness_scan` findings, sorted score descending, with Keep/Delete buttons; pending decisions; recent blocked/executed delete outcomes; and a read-only view of the nightly cleanup dry-run plans), and `/history` (7-day finding + remediation log for both nodes).
+
+A Keep click snoozes the entity for `staleness.snooze_days` — never gated, since it doesn't touch the media stack. A Delete click routes through Sonarr/Radarr's delete-with-files endpoint (plus an import-list exclusion, a best-effort Overseerr request decline, and a best-effort `qbit_delete` hint to the peer) — but it only actually executes when `actions.enabled` is true (ADR-019); otherwise the decision is still recorded, just shown as blocked. `internal/decision` is what both the web POST handler and the `healarr decide keep|delete` CLI verb call, so the two surfaces can never disagree about what a decision does. Cleanup plans (`internal/cleanup`) shown on `/decisions` are read-only in this phase — there is no web execute button for a cleanup yet, only the `healarr cleanup <kind>` CLI verb and the nightly planning job.
 
 ### Cost + safety guardrails
 
 - **LLM cost**: one Haiku 4.5 call per day for the digest narrative (not per-event as in the original agentic design) — `daily_budget_usd` in config caps spend; a failed or over-budget call falls back to a templated digest, never blocks the email.
-- **Dry-run mode**: global `--dry-run` flag (and per-check promotion from dry-run to live) — Correct-tier cleanups ship dry-run first and are promoted once trusted (Phase 4).
+- **Dry-run mode**: the global `--dry-run` flag never opens the store, on any verb. Independently, Correct-tier cleanups plan dry-run always and only execute once the operator flips the single `actions.enabled` config switch (and `cleanup.dry_run = false`) — a config change, not a per-plan "promote" action (ADR-019).
 - **Peer resilience**: unreachable peer never blocks the digest — it just reports "peer stale since …" (ADR-015; push-based reconciliation mechanics in ADR-018).
 - **Escalate tier**: the agent never auto-deletes library media; staleness candidates always require a human decision (ADR-016).
 
@@ -180,12 +186,15 @@ Go rewrite (ADR-013..016) replaces the earlier Python-era phase plan below. Each
 - First real daily digest email, merging both nodes' findings
 - Observe-only throughout (ADR-018): decisions are recorded, never executed, until Phase 4
 
-### Phase 4 — Web UI + decisions + cleanups + staleness
+### Phase 4 — Web UI + decisions + cleanups + staleness ✅
 
-- `/healarr/` pages: dashboard, decisions, history (ADR-014)
-- Decision executor; cleanup actions promoted from dry-run to live
-- Staleness scorer (ADR-016) wired into the decisions page
-- nginx snippet PR against simplarr's `split.conf`
+- `/healarr/` pages — dashboard, decisions, history — behind token-cookie auth with in-memory, 30-day sessions and per-session CSRF (ADR-014); `agent serve` hosts it on the Pi only, gated on `secrets.toml`'s `web_token`
+- Staleness scorer (ADR-016, `internal/staleness/`) wired into a new `staleness_scan` check (catalogue now 22 checks) and the decisions page; `healarr staleness score` previews it read-only
+- Decision executor (`internal/decision/`): `healarr decide keep|delete` and the web `/decisions` POST both call it; keep snoozes (never gated), delete runs arr delete-with-files + exclusion + best-effort Overseerr decline + peer `qbit_delete` hint, gated behind `actions.enabled`
+- Cleanup planners (`internal/cleanup/`) for recycle/orphans/docker/seeded, run nightly (always dry-run, never executed overnight) and on demand via `healarr cleanup <kind>`; `cleanup.Execute` requires both `actions.enabled` and `cleanup.dry_run = false`
+- ADR-019: the `[actions]` gate as the one trust switch for every mutating path added this phase — no per-plan "promotion" workflow, and `staleness_scores` stays unused since findings already carry the score
+- Digest gains STALENESS / CLEANUP (dry-run plans) / pending-decisions sections, and a `Decisions:` link when `web.public_url` is set
+- nginx snippet (`deploy/nginx/healarr.conf.snippet`) added to the Pi's live simplarr config; a PR against the simplarr repo itself is left for the operator
 
 ### Phase 5 — LLM digest
 

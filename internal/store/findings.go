@@ -17,9 +17,10 @@ import (
 type StoredFinding struct {
 	ID int64
 	check.Finding
-	Status     string // open|snoozed|resolved
-	SeenCount  int
-	ResolvedAt *time.Time
+	Status      string // open|snoozed|resolved
+	SeenCount   int
+	ResolvedAt  *time.Time
+	SnoozeUntil *time.Time
 }
 
 // upsertFindings applies the dedup rule inside rep's SaveReport transaction:
@@ -62,17 +63,28 @@ func upsertFindings(ctx context.Context, tx *sql.Tx, rep check.Report) (UpsertSu
 	return summary, nil
 }
 
+// updateOpenFinding refreshes the matching open/snoozed row for f, if any.
+// A snoozed row stays snoozed while its snooze_until is still ahead of this
+// report's GeneratedAt; once that time has passed, the row flips back to
+// open and its snooze_until is cleared, so a resolved snooze doesn't leave
+// the finding stuck snoozed forever. The comparison happens against the
+// row's own current columns inside the UPDATE (snooze_until is stored as an
+// RFC 3339 UTC string, so lexicographic and chronological order agree, as
+// elsewhere in this package).
 func updateOpenFinding(ctx context.Context, tx *sql.Tx, f check.Finding, generatedAt time.Time) (bool, error) {
 	dataJSON, err := toJSONOrDefault(f.Data, "{}")
 	if err != nil {
 		return false, fmt.Errorf("store: marshal finding %s data: %w", f.Key(), err)
 	}
 
+	generatedAtStr := formatTime(generatedAt)
 	res, err := tx.ExecContext(ctx, `
 		UPDATE findings
-		SET last_seen = ?, seen_count = seen_count + 1, severity = ?, summary = ?, detail = ?, data = ?
+		SET last_seen = ?, seen_count = seen_count + 1, severity = ?, summary = ?, detail = ?, data = ?,
+		    status = CASE WHEN status = 'snoozed' AND snooze_until > ? THEN 'snoozed' ELSE 'open' END,
+		    snooze_until = CASE WHEN status = 'snoozed' AND snooze_until > ? THEN snooze_until ELSE NULL END
 		WHERE node = ? AND check_id = ? AND entity_key = ? AND status IN ('open', 'snoozed')`,
-		formatTime(generatedAt), string(f.Severity), f.Summary, f.Detail, dataJSON,
+		generatedAtStr, string(f.Severity), f.Summary, f.Detail, dataJSON, generatedAtStr, generatedAtStr,
 		string(f.Node), f.CheckID, f.EntityKey,
 	)
 	if err != nil {
@@ -140,7 +152,7 @@ func resolveMissingFindings(ctx context.Context, tx *sql.Tx, node config.Node, c
 func (s *Store) OpenFindings(ctx context.Context, node config.Node) (out []StoredFinding, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, check_id, node, entity_key, severity, tier, summary, detail, data, status,
-		       first_seen, last_seen, resolved_at, seen_count
+		       first_seen, last_seen, resolved_at, snooze_until, seen_count
 		FROM findings
 		WHERE node = ? AND status IN ('open', 'snoozed')
 		ORDER BY
@@ -175,11 +187,11 @@ func scanStoredFinding(rows *sql.Rows) (StoredFinding, error) {
 		id                                                                     int64
 		checkID, nodeStr, entityKey, severity, tier, summary, detail, dataJSON string
 		status, firstSeenStr, lastSeenStr                                      string
-		resolvedAtStr                                                          sql.NullString
+		resolvedAtStr, snoozeUntilStr                                          sql.NullString
 		seenCount                                                              int
 	)
 	if err := rows.Scan(&id, &checkID, &nodeStr, &entityKey, &severity, &tier, &summary, &detail, &dataJSON, &status,
-		&firstSeenStr, &lastSeenStr, &resolvedAtStr, &seenCount); err != nil {
+		&firstSeenStr, &lastSeenStr, &resolvedAtStr, &snoozeUntilStr, &seenCount); err != nil {
 		return StoredFinding{}, fmt.Errorf("store: scan finding: %w", err)
 	}
 
@@ -206,6 +218,15 @@ func scanStoredFinding(rows *sql.Rows) (StoredFinding, error) {
 		resolvedAt = &t
 	}
 
+	var snoozeUntil *time.Time
+	if snoozeUntilStr.Valid {
+		t, err := time.Parse(time.RFC3339, snoozeUntilStr.String)
+		if err != nil {
+			return StoredFinding{}, fmt.Errorf("store: parse finding.snooze_until: %w", err)
+		}
+		snoozeUntil = &t
+	}
+
 	return StoredFinding{
 		ID: id,
 		Finding: check.Finding{
@@ -220,8 +241,9 @@ func scanStoredFinding(rows *sql.Rows) (StoredFinding, error) {
 			FirstSeen: firstSeen,
 			LastSeen:  lastSeen,
 		},
-		Status:     status,
-		SeenCount:  seenCount,
-		ResolvedAt: resolvedAt,
+		Status:      status,
+		SeenCount:   seenCount,
+		ResolvedAt:  resolvedAt,
+		SnoozeUntil: snoozeUntil,
 	}, nil
 }

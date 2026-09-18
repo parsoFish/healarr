@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,6 +133,12 @@ func validate(cfg Config) error {
 	if err := validateAgent(cfg.Agent); err != nil {
 		return err
 	}
+	if err := validateStaleness(cfg.Staleness); err != nil {
+		return err
+	}
+	if err := validateCleanup(cfg.Cleanup); err != nil {
+		return err
+	}
 	return validateEmailDigestAt(cfg.Email.DigestAt)
 }
 
@@ -237,6 +244,97 @@ func validateChecks(c Checks) error {
 			c.DiskCritPercent, c.DiskWarnPercent)
 	case c.DiskCritPercent > maxPercent:
 		return fmt.Errorf("config: checks.disk_crit_percent must be <= %d (got %v)", maxPercent, c.DiskCritPercent)
+	}
+	return nil
+}
+
+// stalenessFloatField pairs one [staleness] float64 value (a point weight
+// or a threshold) with the TOML key it was read from, so a rejection can
+// name the line to fix.
+type stalenessFloatField struct {
+	key string
+	v   float64
+}
+
+// stalenessFloats lists every float64 field in Staleness against its TOML
+// key. Adding a field to Staleness means adding it here;
+// TestValidateRejectsEveryNonFiniteStalenessFloat walks the struct by
+// reflection and fails if one is missed.
+func stalenessFloats(s Staleness) []stalenessFloatField {
+	return []stalenessFloatField{
+		{"days_max_points", s.DaysMaxPoints},
+		{"watched_full_points", s.WatchedFullPoints},
+		{"watched_partial_points", s.WatchedPartialPoints},
+		{"ended_points", s.EndedPoints},
+		{"continuing_points", s.ContinuingPoints},
+		{"size_points_per_gb", s.SizePointsPerGB},
+		{"size_max_points", s.SizeMaxPoints},
+		{"other_requester_points", s.OtherRequesterPoints},
+		{"owner_requester_points", s.OwnerRequesterPoints},
+		{"age_points_per_day", s.AgePointsPerDay},
+		{"age_max_points", s.AgeMaxPoints},
+		{"candidate_threshold", s.CandidateThreshold},
+		{"watchlist_threshold", s.WatchlistThreshold},
+	}
+}
+
+// validateStaleness rejects [staleness] values the C6 scorer could not act
+// on: TOML's nan/inf float literals decode cleanly, so a non-finite point
+// weight or threshold is checked explicitly rather than trusted; a
+// non-positive days_horizon would make the days-since-added component
+// divide by zero (or flip sign on a negative horizon); a negative
+// never_watched_after_days is always a typo (it's compared against a
+// count of days since a title was added); the two thresholds only mean
+// anything as an ordered pair inside (0, 100] (a candidate must first
+// clear the watchlist bar); and a non-positive snooze_days would mean a
+// snoozed title never resurfaces (<= 0 leaves it permanently — or,
+// negative, immediately — eligible again).
+func validateStaleness(s Staleness) error {
+	for _, f := range stalenessFloats(s) {
+		if math.IsNaN(f.v) || math.IsInf(f.v, 0) {
+			return fmt.Errorf("config: staleness.%s must be finite (got %v)", f.key, f.v)
+		}
+	}
+	if s.DaysHorizon <= 0 {
+		return fmt.Errorf("config: staleness.days_horizon must be > 0 (got %d)", s.DaysHorizon)
+	}
+	if s.NeverWatchedAfterDays < 0 {
+		return fmt.Errorf("config: staleness.never_watched_after_days must be >= 0 (got %d)", s.NeverWatchedAfterDays)
+	}
+	switch {
+	case s.WatchlistThreshold <= 0:
+		return fmt.Errorf("config: staleness.watchlist_threshold must be > 0 (got %v)", s.WatchlistThreshold)
+	case s.CandidateThreshold <= s.WatchlistThreshold:
+		return fmt.Errorf("config: staleness.candidate_threshold must be > staleness.watchlist_threshold (got %v <= %v)",
+			s.CandidateThreshold, s.WatchlistThreshold)
+	case s.CandidateThreshold > maxPercent:
+		return fmt.Errorf("config: staleness.candidate_threshold must be <= %d (got %v)", maxPercent, s.CandidateThreshold)
+	}
+	if s.SnoozeDays <= 0 {
+		return fmt.Errorf("config: staleness.snooze_days must be > 0 (got %d)", s.SnoozeDays)
+	}
+	return nil
+}
+
+// cleanupDurations lists every duration in Cleanup against its TOML key,
+// mirroring checkDurations for Checks.
+func cleanupDurations(c Cleanup) []durationField {
+	return []durationField{
+		{"orphan_min_age", c.OrphanMinAge},
+		{"recycle_min_age", c.RecycleMinAge},
+	}
+}
+
+// validateCleanup rejects [cleanup] durations the executor could not act
+// on: every one is a minimum age measured forward from an event, so
+// negative is always a typo. dry_run and docker_dangling are plain bools —
+// every value is valid, and dry_run's safety comes from its default
+// (true), not from validation here.
+func validateCleanup(c Cleanup) error {
+	for _, f := range cleanupDurations(c) {
+		if f.d < 0 {
+			return fmt.Errorf("config: cleanup.%s must be >= 0 (got %s)", f.key, f.d)
+		}
 	}
 	return nil
 }

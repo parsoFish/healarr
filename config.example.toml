@@ -27,6 +27,7 @@ peer_url = "http://192.0.2.10:8090"
 [web]
 listen_addr = "0.0.0.0:8091"
 base_path = "/healarr"
+# public_url = "http://192.0.2.10/healarr"   # LAN address for the digest email's "Decisions:" link; "" omits it
 
 [email]
 to = "you@example.com"
@@ -134,3 +135,69 @@ container_path = "/movies"
 # # a torrent that completed less than this long ago is exempt from the
 # # safe-to-remove check, however far past its seeding target it is
 # seeded_min_age = "24h"
+
+# [staleness]
+# # C6 point weights for the "is this title stale" scorer, plus the
+# # thresholds and per-title state the decision workflow reads alongside
+# # the score. A higher score means more stale.
+# #
+# # days-since-added-with-no-recent-watch component: full days_max_points
+# # once days_since_added >= days_horizon, scaled linearly below that; a
+# # title never watched and added more than never_watched_after_days ago
+# # always gets the full days_max_points regardless of days_horizon
+# days_max_points = 40
+# days_horizon = 180
+# never_watched_after_days = 30
+#
+# # watch-status points (a title fully watched is more stale than one still
+# # being watched; ended shows are more stale than continuing ones)
+# watched_full_points = 15
+# watched_partial_points = -10
+# ended_points = 10
+# continuing_points = -15
+#
+# # disk-size points: size_points_per_gb per GB on disk, capped at size_max_points
+# size_points_per_gb = 0.1
+# size_max_points = 15
+#
+# # requester points: who asked for it matters (the owner's own requests are
+# # less stale than someone else's)
+# other_requester_points = 10
+# owner_requester_points = -5
+#
+# # age-since-release points: age_points_per_day per day since release,
+# # capped at age_max_points
+# age_points_per_day = 0.05
+# age_max_points = 10
+#
+# # a score >= candidate_threshold is a removal candidate; a score between
+# # watchlist_threshold and candidate_threshold goes on the watchlist
+# candidate_threshold = 70
+# watchlist_threshold = 50
+#
+# # Overseerr username/email of the library owner; "" means unknown, so
+# # every requester is scored as "other"
+# owner = ""
+# # once a title is snoozed it is excluded from staleness candidates for
+# # this many days before it can resurface
+# snooze_days = 60
+
+# [cleanup]
+# # dry_run reports what cleanup would remove without removing anything;
+# # this must stay true until the operator has reviewed a few dry-run
+# # reports and trusts the candidates it picks
+# dry_run = true
+# # an orphaned download must be at least this old before cleanup removes it
+# orphan_min_age = "168h"
+# # a file in a recycle bin dir must be at least this old before cleanup removes it
+# recycle_min_age = "24h"
+# # prune only dangling (untagged, unused) Docker images, never tagged ones
+# docker_dangling = true
+
+# [actions]
+# # master switch for every mutating path (decision.Execute's delete
+# # branch, cleanup.Execute, the NAS-side qbit_delete). Keep (snooze) is
+# # never gated by this. This MUST stay false until the operator has
+# # watched healarr's decisions long enough to trust them — flipping it to
+# # true lets healarr delete files and torrents unattended.
+# enabled = false

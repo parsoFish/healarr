@@ -1,0 +1,36 @@
+{{define "history"}}
+{{template "header" .}}
+<h1>History</h1>
+<p class="meta">Last 7 days.</p>
+
+{{range .Nodes}}
+<section class="panel">
+<h2>{{.Node}} findings</h2>
+{{if .Findings}}
+<table>
+<thead><tr><th>Check</th><th>Entity</th><th>Status</th><th>Summary</th><th>Last seen</th></tr></thead>
+<tbody>
+{{range .Findings}}
+<tr><td>{{.CheckID}}</td><td>{{.EntityKey}}</td><td>{{.Status}}</td><td>{{.Summary}}</td><td>{{.LastSeen | ago}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No finding history in the last 7 days.</p>{{end}}
+</section>
+{{end}}
+
+<section class="panel">
+<h2>Remediations</h2>
+{{if .Remediations}}
+<table>
+<thead><tr><th>Node</th><th>Action</th><th>Status</th><th>Detail</th><th>Dry run</th><th>When</th></tr></thead>
+<tbody>
+{{range .Remediations}}
+<tr><td>{{.Node}}</td><td>{{.Action}}</td><td>{{.Status}}</td><td>{{.Detail}}</td><td>{{if .DryRun}}yes{{else}}no{{end}}</td><td>{{.CreatedAt | ago}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No remediations in the last 7 days.</p>{{end}}
+</section>
+{{template "footer" .}}
+{{end}}

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/parsoFish/healarr/internal/check"
@@ -32,6 +33,9 @@ type Store interface {
 	OpenFindings(ctx context.Context, node config.Node) ([]store.StoredFinding, error)
 	SavePeerMessage(ctx context.Context, direction, kind string, peer config.Node, payload []byte, at time.Time) (int64, error)
 	LastPeerMessageAt(ctx context.Context, peer config.Node, kind string) (time.Time, bool, error)
+	RecordRemediation(ctx context.Context, r store.Remediation) (int64, error)
+	RecentRemediations(ctx context.Context, since time.Time) ([]store.Remediation, error)
+	PendingDecisions(ctx context.Context) ([]store.Decision, error)
 	EnqueueEmail(ctx context.Context, to, subject, body string, at time.Time) (int64, error)
 	MarkEmailSent(ctx context.Context, id int64, at time.Time) error
 	MarkEmailFailed(ctx context.Context, id int64, at time.Time, cause error) error
@@ -58,6 +62,15 @@ type Options struct {
 	Now       func() time.Time
 	Version   string
 	PeerToken string // from secrets; Run requires this when cfg.Peer.ListenAddr is set
+
+	// Web is the LAN web UI's http.Handler (internal/web.New's return
+	// value), nil on a node that doesn't serve it (the NAS, or a Pi
+	// without a web token — see internal/cli/cmd_agent.go). Run starts it
+	// exactly like the peer server when non-nil.
+	Web http.Handler
+	// WebAddr is the address Run binds Web to (cfg.Web.ListenAddr).
+	// Meaningless when Web is nil.
+	WebAddr string
 }
 
 // Agent runs check cycles for one node, pushes reports to its peer, and
@@ -73,6 +86,8 @@ type Agent struct {
 	now       func() time.Time
 	version   string
 	peerToken string
+	web       http.Handler
+	webAddr   string
 
 	// startedAt is set once, by Run, to a.now() before the scheduler
 	// starts dispatching jobs — never written concurrently with a read,
@@ -109,6 +124,8 @@ func New(o Options) (*Agent, error) {
 		now:       o.Now,
 		version:   o.Version,
 		peerToken: o.PeerToken,
+		web:       o.Web,
+		webAddr:   o.WebAddr,
 	}, nil
 }
 

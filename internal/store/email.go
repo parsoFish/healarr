@@ -128,7 +128,7 @@ func (s *Store) PendingEmails(ctx context.Context) (out []OutboxEmail, err error
 
 func scanOutboxEmail(rows *sql.Rows) (OutboxEmail, error) {
 	var (
-		id                             int64
+		id                            int64
 		to, subject, body, createdStr string
 	)
 	if err := rows.Scan(&id, &to, &subject, &body, &createdStr); err != nil {

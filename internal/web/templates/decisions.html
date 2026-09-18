@@ -1,0 +1,87 @@
+{{define "decisions"}}
+{{template "header" .}}
+<h1>Decisions</h1>
+{{if not .ActionsEnabled}}
+<div class="banner">Actions are disabled in config — delete requests are recorded but not executed.</div>
+{{end}}
+
+<section class="panel">
+<h2>Staleness candidates</h2>
+{{if .Candidates}}
+<table>
+<thead><tr><th>Title</th><th>Score</th><th>Band</th><th>Components</th><th>Size</th><th>Last watched</th><th>Requested by</th><th>Action</th></tr></thead>
+<tbody>
+{{range .Candidates}}
+<tr>
+  <td>{{.Title}} <span class="meta">({{.Kind}})</span></td>
+  <td>{{.Score | round}}</td>
+  <td><span class="badge {{.Band}}">{{.Band}}</span></td>
+  <td class="meta">{{range .Components}}{{.Name}}: {{printf "%.1f" .Value}} {{end}}</td>
+  <td>{{.SizeBytes | bytes}}</td>
+  <td>{{if .HasWatched}}{{.LastWatched | ago}}{{else}}never{{end}}</td>
+  <td>{{if .RequestedBy}}{{.RequestedBy}}{{else}}unknown{{end}}</td>
+  <td class="actions">
+    <form method="post" action="{{$.BasePath}}/decisions">
+      <input type="hidden" name="entity_key" value="{{.EntityKey}}">
+      <input type="hidden" name="kind" value="keep">
+      <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+      <button type="submit" class="keep">Keep</button>
+    </form>
+    <form method="post" action="{{$.BasePath}}/decisions">
+      <input type="hidden" name="entity_key" value="{{.EntityKey}}">
+      <input type="hidden" name="kind" value="delete">
+      <input type="hidden" name="csrf" value="{{$.CSRFToken}}">
+      <button type="submit" class="delete">Delete</button>
+    </form>
+  </td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="empty">No staleness candidates.</p>
+{{end}}
+</section>
+
+<section class="panel">
+<h2>Pending decisions</h2>
+{{if .Pending}}
+<table>
+<thead><tr><th>ID</th><th>Entity</th><th>Kind</th><th>Requested</th></tr></thead>
+<tbody>{{range .Pending}}<tr><td>{{.ID}}</td><td>{{.EntityKey}}</td><td>{{.Kind}}</td><td>{{.RequestedAt | ago}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No pending decisions.</p>{{end}}
+</section>
+
+<section class="panel">
+<h2>Blocked</h2>
+{{if .Blocked}}
+<table>
+<thead><tr><th>Node</th><th>Detail</th><th>When</th></tr></thead>
+<tbody>{{range .Blocked}}<tr><td>{{.Node}}</td><td>{{.Detail}}</td><td>{{.CreatedAt | ago}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No blocked decisions in the last 7 days.</p>{{end}}
+</section>
+
+<section class="panel">
+<h2>Executed</h2>
+{{if .Executed}}
+<table>
+<thead><tr><th>Node</th><th>Detail</th><th>When</th></tr></thead>
+<tbody>{{range .Executed}}<tr><td>{{.Node}}</td><td>{{.Detail}}</td><td>{{.CreatedAt | ago}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No executed decisions in the last 7 days.</p>{{end}}
+</section>
+
+<section class="panel">
+<h2>Cleanup plans</h2>
+<p class="meta">Read-only for now &mdash; execution buttons for these plans are a later task.</p>
+{{if .CleanupPlans}}
+<table>
+<thead><tr><th>Node</th><th>Action</th><th>Status</th><th>Detail</th><th>When</th></tr></thead>
+<tbody>{{range .CleanupPlans}}<tr><td>{{.Node}}</td><td>{{.Action}}</td><td>{{.Status}}</td><td>{{.Detail}}</td><td>{{.CreatedAt | ago}}</td></tr>{{end}}</tbody>
+</table>
+{{else}}<p class="empty">No cleanup plans in the last 7 days.</p>{{end}}
+</section>
+{{template "footer" .}}
+{{end}}

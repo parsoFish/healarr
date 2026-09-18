@@ -1,0 +1,24 @@
+# simplarr split.conf — proxy healarr's LAN web UI
+# Replace 192.0.2.20 with your Pi's LAN address
+#
+# /healarr/login carries the web_token in its query string
+# (?token=<web_token>), which nginx's default access_log would otherwise
+# write to disk on every login — access_log off here keeps that secret
+# out of the log file. A POST-based login (so the token never has to
+# appear in a URL at all) is a follow-up, not yet implemented.
+location = /healarr/login {
+    access_log off;
+    proxy_pass http://192.0.2.20:8091/healarr/login;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 30s;
+}
+location = /healarr {
+    return 301 /healarr/;
+}
+location /healarr/ {
+    proxy_pass http://192.0.2.20:8091/healarr/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_read_timeout 30s;
+}

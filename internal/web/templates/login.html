@@ -1,0 +1,12 @@
+{{define "login"}}
+{{template "header" .}}
+<div class="login-panel">
+  <h1>healarr</h1>
+  <p class="meta">Enter the web token from secrets.toml to sign in.</p>
+  <form method="get" action="{{.BasePath}}/login">
+    <input type="password" name="token" placeholder="token" autofocus>
+    <button type="submit" class="btn">Sign in</button>
+  </form>
+</div>
+{{template "footer" .}}
+{{end}}

@@ -1,0 +1,40 @@
+{{define "dashboard"}}
+{{template "header" .}}
+<h1>Dashboard</h1>
+<div class="grid">
+{{range .Nodes}}
+  <section class="node-card">
+    <h2>{{.Node}}</h2>
+    {{if .HasReport}}
+      <p class="meta">Last report {{.GeneratedAt | ago}} &middot; {{.ChecksRun}} checks run, {{.ChecksFailed}} failed &middot; {{.FindingsCount}} open findings</p>
+    {{else}}
+      <p class="meta empty">No report received yet.</p>
+    {{end}}
+    <p class="meta">Heartbeat: {{if .HasHeartbeat}}{{.HeartbeatAt | ago}}{{else}}no heartbeat received{{end}}</p>
+
+    {{if .DiskGauges}}
+    <h3>Disk</h3>
+    {{range .DiskGauges}}
+      <div>{{.Label}} &mdash; {{.Percent | pct}}</div>
+      <div class="gauge"><span style="width: {{.Percent}}%"></span></div>
+    {{end}}
+    {{end}}
+
+    {{if .Critical}}
+    <h3>Critical</h3>
+    <ul>{{range .Critical}}<li><span class="badge critical">critical</span> [{{.CheckID}}] {{.Summary}}</li>{{end}}</ul>
+    {{end}}
+    {{if .Warn}}
+    <h3>Warn</h3>
+    <ul>{{range .Warn}}<li><span class="badge warn">warn</span> [{{.CheckID}}] {{.Summary}}</li>{{end}}</ul>
+    {{end}}
+    {{if .Info}}
+    <h3>Info</h3>
+    <ul>{{range .Info}}<li><span class="badge info">info</span> [{{.CheckID}}] {{.Summary}}</li>{{end}}</ul>
+    {{end}}
+    {{if not .FindingsCount}}<p class="empty">No open findings.</p>{{end}}
+  </section>
+{{end}}
+</div>
+{{template "footer" .}}
+{{end}}

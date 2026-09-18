@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -320,6 +321,101 @@ func TestRunCancelsJobsWhenPeerServerFails(t *testing.T) {
 	}
 }
 
+// TestRunStartsWebServerAndShutsDownGracefully proves Run starts
+// Options.Web on Options.WebAddr exactly like the peer server: it accepts
+// a request while running, and an already-cancelled context still makes
+// Run return promptly with no error once the web server has shut down.
+func TestRunStartsWebServerAndShutsDownGracefully(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	if closeErr := ln.Close(); closeErr != nil {
+		t.Fatalf("ln.Close: %v", closeErr)
+	}
+
+	webCalled := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(webCalled)
+		w.WriteHeader(http.StatusOK)
+	})
+	a := newRunTestAgent(t, func(o *Options) {
+		o.Web = handler
+		o.WebAddr = addr
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+
+	// Poll until the listener accepts connections (Run's goroutine binds
+	// asynchronously), then prove a real request reaches Options.Web.
+	var resp *http.Response
+	for i := 0; i < 100; i++ {
+		resp, err = http.Get("http://" + addr + "/")
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("GET %s: %v", addr, err)
+	}
+	_ = resp.Body.Close()
+
+	select {
+	case <-webCalled:
+	case <-time.After(time.Second):
+		t.Fatal("web handler was never called")
+	}
+
+	cancel()
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run() err = %v, want nil", runErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not return within 2s of ctx cancellation")
+	}
+}
+
+// TestRunSkipsWebServerWhenNil proves Run works exactly as before when
+// Options.Web is left nil (the NAS, or a Pi with no web token): no
+// listener is bound, and shutdown is still prompt.
+func TestRunSkipsWebServerWhenNil(t *testing.T) {
+	a := newRunTestAgent(t, nil) // Web nil, WebAddr "" by default
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := runWithTimeout(t, a, ctx); err != nil {
+		t.Fatalf("Run() err = %v, want nil", err)
+	}
+}
+
+// TestRunPropagatesWebServerBindErrorPromptly proves a web server that
+// fails to bind (address already in use) surfaces its error from Run on
+// its own, exactly like the peer server's equivalent bind-failure test.
+func TestRunPropagatesWebServerBindErrorPromptly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	occupiedAddr := ln.Addr().String()
+
+	a := newRunTestAgent(t, func(o *Options) {
+		o.Web = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+		o.WebAddr = occupiedAddr
+	})
+
+	if err := runWithTimeout(t, a, context.Background()); err == nil {
+		t.Fatal("Run() err = nil, want a web server bind error")
+	}
+}
+
 // TestRunLogsStartupSummary proves the daemon says what it is going to do
 // as it starts: an operator reading `journalctl -u healarr` after a
 // restart can tell from one line which node and version came up, which
@@ -345,6 +441,7 @@ func TestRunLogsStartupSummary(t *testing.T) {
 		"node=pi", "version=v-test", "timezone=Australia/Brisbane",
 		"peer_configured=true", "heartbeat_enabled=true",
 		"digest_enabled=true", "digest_at=07:00", "checkpoint_at=03:00",
+		"web_enabled=false", "web_listen_addr=\"\"",
 		"cron_entries=",
 	} {
 		if !strings.Contains(out, want) {

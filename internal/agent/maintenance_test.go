@@ -35,8 +35,15 @@ func TestScheduleCheckpointJobLogsBusyAsWarn(t *testing.T) {
 	if !strings.Contains(logBuf.String(), "level=WARN") {
 		t.Fatalf("log = %q, want a WARN-level entry for the busy checkpoint", logBuf.String())
 	}
-	if strings.Contains(logBuf.String(), "level=ERROR") {
-		t.Fatalf("log = %q, want no ERROR-level entry for a busy (expected) checkpoint", logBuf.String())
+	// Scoped to lines naming the checkpoint itself: runAllJobs also fires
+	// the daily cadence's chained cleanup-planning job (cleanupjob.go),
+	// which logs its own ERROR line on this test's zero-value Deps (no
+	// Docker client configured) — expected noise from an unrelated job,
+	// not a checkpoint failure.
+	for _, line := range strings.Split(logBuf.String(), "\n") {
+		if strings.Contains(line, "checkpoint") && strings.Contains(line, "level=ERROR") {
+			t.Fatalf("log line = %q, want no ERROR-level entry for a busy (expected) checkpoint", line)
+		}
 	}
 }
 

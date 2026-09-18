@@ -140,7 +140,7 @@ func TestSendDigestPeerNeverReportedOmitsPeerSection(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: false}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSendDigestPeerFreshIncludesFindings(t *testing.T) {
 	}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestSendDigestPeerStaleMarksStaleSince(t *testing.T) {
 	}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -313,7 +313,7 @@ func TestBuildPeerSectionPeerLatestReportErrorPropagates(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: true, LatestReportErr: wantErr}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	if _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
+	if _, _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("buildPeerSection() err = %v, want wrapping %v", err, wantErr)
 	}
 }
@@ -323,7 +323,7 @@ func TestBuildPeerSectionPeerOpenFindingsErrorPropagates(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: true, OpenFindingsErr: wantErr}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	if _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
+	if _, _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("buildPeerSection() err = %v, want wrapping %v", err, wantErr)
 	}
 }
@@ -347,6 +347,209 @@ func TestToFindingsEmptyInputReturnsEmptyNotNil(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("toFindings(nil) = %+v, want empty", got)
+	}
+}
+
+// digestStalenessFinding builds a check.Finding shaped like
+// internal/staleness/check.go's stalenessFinding, for tests exercising
+// collectStalenessFindings/SendDigest's STALENESS section wiring.
+func digestStalenessFinding(node config.Node, entity, title string, score float64) check.Finding {
+	return check.Finding{
+		CheckID:   stalenessScanCheckID,
+		Node:      node,
+		EntityKey: entity,
+		Severity:  check.SeverityWarn,
+		Tier:      check.TierEscalate,
+		Data:      map[string]any{"score": score, "title": title},
+	}
+}
+
+// TestCollectStalenessFindingsSortsByScoreDescAcrossBothNodes proves the
+// digest's STALENESS input combines own and peer staleness_scan findings
+// (each already filtered by openStalenessFindings) and sorts the result
+// by score descending.
+func TestCollectStalenessFindingsSortsByScoreDescAcrossBothNodes(t *testing.T) {
+	own := []check.Finding{
+		digestStalenessFinding(config.NodePi, "sonarr:1", "Low", 40),
+		digestStalenessFinding(config.NodePi, "sonarr:2", "High", 90),
+	}
+	peer := []check.Finding{digestStalenessFinding(config.NodeNAS, "radarr:1", "Mid", 65)}
+
+	got := collectStalenessFindings(own, peer)
+
+	want := []string{"High", "Mid", "Low"}
+	if len(got) != len(want) {
+		t.Fatalf("collectStalenessFindings() = %d findings, want %d: %+v", len(got), len(want), got)
+	}
+	for i, title := range want {
+		if got[i].Data["title"] != title {
+			t.Fatalf("collectStalenessFindings()[%d].Data[title] = %v, want %q", i, got[i].Data["title"], title)
+		}
+	}
+}
+
+// TestCollectStalenessFindingsNilPeerOmitsPeerFindings proves a nil peer
+// slice (no peer report ever received) still returns the own-node
+// findings, rather than erroring or panicking.
+func TestCollectStalenessFindingsNilPeerOmitsPeerFindings(t *testing.T) {
+	own := []check.Finding{digestStalenessFinding(config.NodePi, "sonarr:1", "Only", 50)}
+	got := collectStalenessFindings(own, nil)
+	if len(got) != 1 || got[0].Data["title"] != "Only" {
+		t.Fatalf("collectStalenessFindings() = %+v, want the one own finding", got)
+	}
+}
+
+// storedStalenessFinding wraps digestStalenessFinding as a
+// store.StoredFinding at the given status, for openStalenessFindings
+// tests — the layer where a snoozed staleness_scan finding still carries
+// its Status, before collectStalenessFindings ever sees it.
+func storedStalenessFinding(node config.Node, entity, title string, score float64, status string) store.StoredFinding {
+	return store.StoredFinding{Finding: digestStalenessFinding(node, entity, title, score), Status: status}
+}
+
+// TestOpenStalenessFindingsExcludesSnoozedAndOtherChecks proves
+// openStalenessFindings drops both a snoozed staleness_scan finding and
+// any finding from a different check id, keeping only open
+// staleness_scan findings — the filter collectStalenessFindings' own
+// callers (SendDigest for own, buildPeerSection for peer) rely on so a
+// snoozed candidate never resurfaces in the digest's STALENESS section.
+func TestOpenStalenessFindingsExcludesSnoozedAndOtherChecks(t *testing.T) {
+	stored := []store.StoredFinding{
+		storedStalenessFinding(config.NodePi, "sonarr:1", "Open", 40, "open"),
+		storedStalenessFinding(config.NodePi, "sonarr:2", "Snoozed", 90, "snoozed"),
+		{Finding: check.Finding{CheckID: "disk_pressure", EntityKey: "/"}, Status: "open"},
+	}
+
+	got := openStalenessFindings(stored)
+
+	if len(got) != 1 || got[0].Data["title"] != "Open" {
+		t.Fatalf("openStalenessFindings() = %+v, want only the open staleness_scan finding", got)
+	}
+}
+
+// TestSendDigestExcludesSnoozedStalenessFromBody proves a snoozed
+// staleness_scan finding never reaches the digest's rendered STALENESS
+// section end to end, while an open one at the same check id still does.
+func TestSendDigestExcludesSnoozedStalenessFromBody(t *testing.T) {
+	fs := &fakeStore{
+		OpenFindingsResult: []store.StoredFinding{
+			storedStalenessFinding(config.NodePi, "sonarr:1", "Still Stale", 80, "open"),
+			storedStalenessFinding(config.NodePi, "sonarr:2", "Just Snoozed", 95, "snoozed"),
+		},
+	}
+	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
+
+	if _, err := a.SendDigest(context.Background()); err != nil {
+		t.Fatalf("SendDigest() err = %v", err)
+	}
+
+	body := fs.Emails[0].Body
+	if !strings.Contains(body, "Still Stale") {
+		t.Fatalf("digest body = %q, want it to include the open staleness finding", body)
+	}
+	if strings.Contains(body, "Just Snoozed") {
+		t.Fatalf("digest body = %q, want the snoozed staleness finding excluded from STALENESS", body)
+	}
+}
+
+// remediationAt builds one "cleanup:<kind>" remediations row at "planned"
+// status with a cleanupjob.go-shaped Detail, for cleanup-plan digest
+// tests. Rows must be passed to cleanupSummariesFromRemediations
+// newest-first, matching store.RecentRemediations' own ordering.
+func remediationAt(kind, detail, status string, at time.Time) store.Remediation {
+	return store.Remediation{Action: "cleanup:" + kind, Status: status, Detail: detail, DryRun: true, CreatedAt: at}
+}
+
+func TestCleanupSummariesFromRemediationsKeepsLatestPerKind(t *testing.T) {
+	newest := remediationAt("recycle", "3 items, 100 bytes", "planned", digestT0)
+	older := remediationAt("recycle", "9 items, 999 bytes", "planned", digestT0.Add(-time.Hour))
+	other := remediationAt("orphans", "1 items, 10 bytes", "planned", digestT0)
+
+	got := cleanupSummariesFromRemediations([]store.Remediation{newest, other, older})
+
+	want := []notify.CleanupSummary{
+		{Kind: "recycle", Items: 3, Bytes: 100},
+		{Kind: "orphans", Items: 1, Bytes: 10},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanupSummariesFromRemediations() = %+v, want %+v", got, want)
+	}
+}
+
+// TestCleanupSummariesFromRemediationsIgnoresNonPlannedAndNonCleanup
+// proves a "blocked"/"failed"/"executed" row and a non-cleanup Action
+// (e.g. "decision_delete") are both excluded.
+func TestCleanupSummariesFromRemediationsIgnoresNonPlannedAndNonCleanup(t *testing.T) {
+	rows := []store.Remediation{
+		remediationAt("recycle", "1 items, 1 bytes", "failed", digestT0),
+		remediationAt("recycle", "1 items, 1 bytes", "blocked", digestT0),
+		{Action: "decision_delete", Status: "planned", Detail: "1 items, 1 bytes", CreatedAt: digestT0},
+	}
+	if got := cleanupSummariesFromRemediations(rows); len(got) != 0 {
+		t.Fatalf("cleanupSummariesFromRemediations() = %+v, want none", got)
+	}
+}
+
+func TestCleanupSummariesFromRemediationsUnparsableDetailYieldsZeroCounts(t *testing.T) {
+	rows := []store.Remediation{remediationAt("docker", "not a number", "planned", digestT0)}
+	got := cleanupSummariesFromRemediations(rows)
+	want := []notify.CleanupSummary{{Kind: "docker", Items: 0, Bytes: 0}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanupSummariesFromRemediations() = %+v, want %+v", got, want)
+	}
+}
+
+// TestSendDigestIncludesStalenessCleanupPlansAndPendingDecisions is the
+// end-to-end happy path for Task 7's digest enrichment: a staleness
+// finding, a recent cleanup plan and two pending decisions all reach the
+// rendered body, and BaseURL comes from cfg.Web.PublicURL.
+func TestSendDigestIncludesStalenessCleanupPlansAndPendingDecisions(t *testing.T) {
+	fs := &fakeStore{
+		OpenFindingsResult:       []store.StoredFinding{{Finding: digestStalenessFinding(config.NodePi, "sonarr:1", "Stale Show", 77)}},
+		RecentRemediationsResult: []store.Remediation{remediationAt("recycle", "4 items, 2000 bytes", "planned", digestT0)},
+		PendingDecisionsResult:   []store.Decision{{ID: 1}, {ID: 2}},
+	}
+	a := newDigestTestAgent(t, func(o *Options) {
+		o.Store = fs
+		o.Cfg.Web.PublicURL = "http://192.0.2.10/healarr"
+	})
+
+	if _, err := a.SendDigest(context.Background()); err != nil {
+		t.Fatalf("SendDigest() err = %v", err)
+	}
+
+	body := fs.Emails[0].Body
+	for _, want := range []string{
+		"STALENESS", "Stale Show (score 77, candidate,",
+		"CLEANUP (dry-run plans)", "- recycle: 4 item(s),",
+		"Decisions pending: 2",
+		"Decisions: http://192.0.2.10/healarr/decisions",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("digest body = %q, want it to contain %q", body, want)
+		}
+	}
+}
+
+func TestSendDigestRecentRemediationsErrorPropagates(t *testing.T) {
+	wantErr := errors.New("recent remediations boom")
+	a := newDigestTestAgent(t, func(o *Options) {
+		o.Store = &fakeStore{RecentRemediationsErr: wantErr}
+	})
+
+	if _, err := a.SendDigest(context.Background()); !errors.Is(err, wantErr) {
+		t.Fatalf("SendDigest() err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestSendDigestPendingDecisionsErrorPropagates(t *testing.T) {
+	wantErr := errors.New("pending decisions boom")
+	a := newDigestTestAgent(t, func(o *Options) {
+		o.Store = &fakeStore{PendingDecisionsErr: wantErr}
+	})
+
+	if _, err := a.SendDigest(context.Background()); !errors.Is(err, wantErr) {
+		t.Fatalf("SendDigest() err = %v, want wrapping %v", err, wantErr)
 	}
 }
 

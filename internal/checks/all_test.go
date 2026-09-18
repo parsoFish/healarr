@@ -43,6 +43,7 @@ func TestCatalogueMatchesSpec(t *testing.T) {
 		{"orphan_downloads", check.NASOnly, check.TierCorrect, check.Daily},
 		{"seeded_done", check.NASOnly, check.TierNudge, check.Daily},
 		{"service_update_available", check.BothNodes, check.TierObserve, check.Daily},
+		{"staleness_scan", check.PiOnly, check.TierEscalate, check.Daily},
 	}
 
 	r, err := Registry(config.Config{})

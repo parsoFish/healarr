@@ -88,6 +88,43 @@ func TestBuildDigestNilPeerLeavesStaleSinceUnset(t *testing.T) {
 	}
 }
 
+func TestBuildDigestOptionsSetStalenessCleanupPlansAndPendingDecisions(t *testing.T) {
+	now := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	staleness := []check.Finding{fixedFinding("staleness_scan", "sonarr:1", check.SeverityWarn, check.TierEscalate, "stale", "", now)}
+	plans := []CleanupSummary{{Kind: "recycle", Items: 2, Bytes: 100}}
+
+	got := BuildDigest(config.NodePi, now, check.Report{}, nil, nil, "",
+		WithStaleness(staleness),
+		WithCleanupPlans(plans),
+		WithPendingDecisions(3),
+	)
+
+	if !reflect.DeepEqual(got.Staleness, staleness) {
+		t.Fatalf("Staleness = %v, want %v", got.Staleness, staleness)
+	}
+	if !reflect.DeepEqual(got.CleanupPlans, plans) {
+		t.Fatalf("CleanupPlans = %v, want %v", got.CleanupPlans, plans)
+	}
+	if got.PendingDecisions != 3 {
+		t.Fatalf("PendingDecisions = %d, want 3", got.PendingDecisions)
+	}
+}
+
+func TestBuildDigestWithoutOptionsLeavesNewFieldsZero(t *testing.T) {
+	now := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	got := BuildDigest(config.NodePi, now, check.Report{}, nil, nil, "")
+
+	if got.Staleness != nil {
+		t.Fatalf("Staleness = %v, want nil (no options given)", got.Staleness)
+	}
+	if got.CleanupPlans != nil {
+		t.Fatalf("CleanupPlans = %v, want nil (no options given)", got.CleanupPlans)
+	}
+	if got.PendingDecisions != 0 {
+		t.Fatalf("PendingDecisions = %d, want 0 (no options given)", got.PendingDecisions)
+	}
+}
+
 func TestBuildDigestNeverMutatesInputs(t *testing.T) {
 	now := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
 	own := check.Report{Errors: []check.CheckError{{CheckID: "a", Error: "e"}}}
