@@ -45,10 +45,10 @@ func notifyTestCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
 // nil sender (errNoSender) means this node was never meant to send mail at
 // all, and no resolvable recipient (errNoRecipient: neither --to nor
 // email.to) means it has nowhere to send this one; either way nothing is
-// enqueued or attempted. Otherwise, unless --dry-run,
-// the message is enqueued in the outbox before it is sent and marked
-// sent/failed afterward, so the outbox reflects every attempt made
-// (mirroring agent.SendDigest); --dry-run sends without touching the store.
+// enqueued or attempted. Otherwise, unless --dry-run, the message is
+// enqueued in the outbox before it is sent and marked sent/failed
+// afterward, so the outbox reflects every attempt made (mirroring
+// agent.SendDigest); --dry-run sends without touching the store.
 func runNotifyTest(cmd *cobra.Command, deps *Deps, flags *GlobalFlags, to string) (err error) {
 	ctx := cmd.Context()
 	cfg, _, err := deps.load(flags)
