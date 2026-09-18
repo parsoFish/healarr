@@ -115,8 +115,68 @@ A check that errored or was skipped never resolves anything under its own id —
 
 ## Daily operations
 
-- **Digest email**: once Phase 3 ships, a daily digest summarises both nodes' findings and links into `/healarr/` for anything that needs a decision. Until then, `healarr report generate` produces the same digest text by hand (see above).
-- **Decisions page**: once Phase 4 ships, staleness candidates and gated Correct-tier actions are approved or rejected from `/healarr/` on the LAN — no email reply, no IMAP.
+- **Digest email**: since Phase 3, a daily digest at `email.digest_at` (default `07:00` local) summarises both nodes' findings; see "Daemon operations" below. Ad hoc, `healarr report generate` still produces the same digest text by hand for this node alone (see above).
+- **Decisions page**: once Phase 4 ships, staleness candidates and gated Correct-tier actions are approved or rejected from `/healarr/` on the LAN — no email reply, no IMAP. Phase 3's peer channel already carries a `decisions` endpoint, but nothing acts on it yet (ADR-018) — it only records what's received.
+
+## Daemon operations
+
+Phase 3 added the long-running daemon, `healarr agent serve`, which both nodes run instead of
+invoking `check run`/`report generate` by hand. It is **observe-only**: every check cycle,
+heartbeat, and peer push it runs persists a report or a peer message and (on the Pi) mails a
+digest, but nothing in this phase blocks a torrent, deletes a file, or otherwise remediates
+anything — that's Phase 4.
+
+### Lifecycle
+
+- **Pi (systemd)**: `sudo systemctl enable --now healarr` to start at boot; `sudo systemctl stop healarr` / `sudo systemctl restart healarr` day to day. See [`deploy/README.md`](../deploy/README.md) for the unit file and update procedure.
+- **NAS (DSM Task Scheduler)**: a "Boot-up" task runs `deploy/dsm/healarr-boot.sh`, which is idempotent — it checks `agent.pid` via `kill -0` and logs + exits 0 rather than starting a second copy if the agent is already up. Stop with `ssh nas 'kill "$(cat /volume1/docker/healarr/agent.pid)"'`; restart by re-running the Task Scheduler task by hand (Task Scheduler → select the task → Run) — that's exactly what a reboot does.
+- Both launchers ultimately run `healarr agent serve --config <path>`. `agent serve` rejects `--dry-run` outright with `"agent serve does not support --dry-run; the daemon is observe-only in this phase"` — every other verb's `--dry-run` means "run in memory," but the daemon's ordinary job is to persist reports, push peer traffic, and send mail, so honouring `--dry-run` there would mean silently running a daemon that never does its job.
+- On start, `agent serve` runs one check cycle immediately (the 5-minute cadence's checks) before the cron scheduler's own first tick fires, so a restart doesn't leave the node's data stale for up to 5 minutes.
+- Shutdown is graceful on SIGINT/SIGTERM: the cron scheduler waits for any in-flight job to finish, and the peer HTTP server (when `peer.listen_addr` is set) waits up to 5s for in-flight requests before its listener closes.
+
+### Logs
+
+- **Pi**: `journalctl -u healarr -f` (add `--since today` to scope it).
+- **NAS**: `ssh nas tail -f /volume1/docker/healarr/agent.log` — there's no `journalctl` on DSM; this is the boot script's own `nohup` redirect.
+- Every scheduled job logs its own failures through the daemon's structured logger rather than crashing it: a panicking job is recovered and logged (`cron.Recover`), and an overlapping run of the same job is skipped and logged rather than left to pile up (`cron.SkipIfStillRunning`).
+
+### Schedule
+
+Every job below runs in `agent.timezone` (an IANA name; `""`, the default, uses the host's own local timezone):
+
+| Job | Spec | Notes |
+|---|---|---|
+| 5-minute check cycle | `*/5 * * * *` | also runs once immediately when `agent serve` starts |
+| 15-minute check cycle | `*/15 * * * *` | |
+| Hourly check cycle | `0 * * * *` | |
+| Daily check cycle | `10 0 * * *` (00:10 local) | deliberately ahead of both the checkpoint and the digest |
+| Heartbeat | every `agent.heartbeat_interval` (default `5m`) | only when this node has a peer configured |
+| Daily digest | `email.digest_at` (default `07:00` local) | Pi only — the node with a mail sender configured |
+| Nightly checkpoint | `agent.checkpoint_at` (default `03:00` local) | both nodes; `ErrCheckpointBusy` (another connection pinning the WAL) is logged at Warn and just retried the next night, not treated as a failure |
+
+00:10, 03:00, and 07:00 are ordered on purpose: the daily checks run first, the checkpoint runs against a database that isn't mid-write from them, and the digest mails a report the checkpoint has already run against.
+
+### Digest email
+
+Only the Pi sends mail — it's the only node with `email.to`/`from`/`msmtp_path` configured and a sender wired in. The digest merges this node's own latest report and open findings with the peer's contribution, and the peer half comes entirely from what the NAS has already **pushed** into the Pi's own store (`peer_messages` + `findings` under `node = "nas"`) — there is no read-time pull baked into the digest itself. Three states, depending on what the Pi's store holds for the peer:
+
+- **Fresh**: the NAS pushed a report within `agent.peer_stale_after` (default `15m`) — rendered the same as this node's own section.
+- **Stale**: `PEER (nas)` / `peer nas stale since <timestamp>` — the last pushed report is older than `agent.peer_stale_after`.
+- **Never received**: `PEER (nas)` / `peer nas: no report received` — this node has never received a report from the peer channel at all (e.g. a brand-new install, or the NAS has never come up).
+
+`healarr notify test [--to <addr>]` sends one short test email through the Pi's real sender immediately, without waiting for `email.digest_at` — useful for confirming msmtp/`~/.msmtprc` works before trusting the schedule. `--dry-run` sends without touching the outbox and prints `"sent (not recorded)"`; without it, the message is enqueued, sent, and marked sent/failed in the outbox (printing `"outbox id: <n>"`), the same bookkeeping the scheduled digest itself does. On a node with no sender configured (the NAS), it fails fast with `"email is only configured on the pi node"` rather than silently doing nothing.
+
+### Peer channel troubleshooting
+
+`healarr peer ping [--json]` heartbeats the configured peer and fetches its latest pushed report. It always exits 0 — it's a diagnostic, not a health gate — printing reachable/unreachable, any error text, and, when a report exists, its age in seconds plus checks-run/checks-failed/findings counts. With no `peer.peer_url` configured it fails fast (non-zero exit) with `"peer_url is not configured"` before attempting a request; the peer client itself retries a transport error or 5xx twice (500ms then 1s backoff) before giving up, so a `peer ping` can take a few seconds to report "unreachable" against a genuinely dead peer.
+
+- **401 from the peer** → the two nodes' `peer_token` values (each node's own `secrets.toml`) don't match. The peer server compares the bearer token in constant time and rejects anything else with a bare 401 — there's no partial-credit response to read tea leaves from. Fix by copying the same token into both `secrets.toml` files and restarting both daemons; per ADR-018, a token rotation always needs a restart on each side, since both the server and the client capture it once at startup.
+- **Digest says `"peer nas stale since …"`** (or `pi`, from the NAS's own digest, once it sends one) → the other node hasn't pushed a **report** inside `agent.peer_stale_after` (a heartbeat alone doesn't reset this — only an inbound report does). Check, in order: is its daemon actually running (`systemctl status healarr` on the Pi; `kill -0 "$(cat agent.pid)"` on the NAS)? Did its DSM boot task fire on the last reboot (Task Scheduler → the task → check run history; re-run it by hand if it didn't)? Is its `peer.listen_addr` reachable from this node at all (`peer ping` from the other side, or a plain `curl` to it)? This is a status message, never a failure — an unreachable peer never blocks the digest from sending.
+- **`peer ping` reports "unreachable"** with a transport-style error → the peer's listener isn't bound (process down) or something on the LAN between the two hosts is blocking it. A 401/403 in the same error text specifically means a token mismatch (see above), not a network problem — don't chase a firewall rule for that one.
+
+### Phase 2 leftover: the `wrong_file_type` inspect-errors finding
+
+Unrelated to the daemon, but worth knowing before it shows up in a daemon-driven digest: `wrong_file_type` (nas, 15m) rolls every torrent whose files qBittorrent couldn't describe this run (a magnet whose metadata never arrived, a torrent removed mid-run) into a single warn/observe finding at entity key `qbit:wrong_file_type:inspect-errors`, rather than emitting one per torrent or letting one bad torrent hide fake releases in the rest of the run's findings. It's informational — check qBittorrent if it persists across cycles — and resolves itself once a later cycle can describe those torrents again (or they've been removed).
 
 ## Common scenarios
 
