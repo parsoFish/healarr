@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/docker"
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
 	"github.com/parsoFish/healarr/internal/clients/overseerr"
@@ -20,6 +23,11 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
 )
+
+// testCheckTimeout is a generous per-check timeout for tests that run the
+// real check engine against fakes, which never do real I/O but still take
+// a context deadline.
+const testCheckTimeout = 5 * time.Second
 
 // fakes bundles every service Fake so a test can inspect Calls after
 // running a command through the real cobra tree.
@@ -33,6 +41,7 @@ type fakes struct {
 	Overseerr *overseerr.Fake
 	Docker    *docker.Fake
 	Host      *hostfs.Fake
+	Store     *FakeStore
 }
 
 // newTestDeps wires a Deps whose constructors return each package's Fake
@@ -50,6 +59,7 @@ func newTestDeps() (*Deps, *fakes) {
 		Overseerr: &overseerr.Fake{},
 		Docker:    &docker.Fake{},
 		Host:      &hostfs.Fake{},
+		Store:     &FakeStore{},
 	}
 	deps := &Deps{
 		Load: func(string) (config.Config, config.Secrets, error) {
@@ -64,6 +74,11 @@ func newTestDeps() (*Deps, *fakes) {
 		Overseerr: func(config.Config, config.Secrets) (overseerr.Client, error) { return fk.Overseerr, nil },
 		Docker:    func(config.Config, config.Secrets) (docker.Client, error) { return fk.Docker, nil },
 		Host:      func(config.Config, config.Secrets) (hostfs.Client, error) { return fk.Host, nil },
+		Registry:  checks.Registry,
+		OpenStore: func(context.Context, config.Config) (StoreAPI, error) {
+			fk.Store.Opened = true
+			return fk.Store, nil
+		},
 	}
 	return deps, fk
 }

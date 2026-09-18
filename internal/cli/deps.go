@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
 
+	"github.com/parsoFish/healarr/internal/check"
+	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/docker"
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
 	"github.com/parsoFish/healarr/internal/clients/httpx"
@@ -16,6 +19,7 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/store"
 )
 
 // Deps carries every external dependency the CLI verbs need: a config
@@ -34,6 +38,13 @@ type Deps struct {
 	Overseerr func(cfg config.Config, sec config.Secrets) (overseerr.Client, error)
 	Docker    func(cfg config.Config, sec config.Secrets) (docker.Client, error)
 	Host      func(cfg config.Config, sec config.Secrets) (hostfs.Client, error)
+
+	// Registry builds the health check catalogue for cfg. Defaults to
+	// checks.Registry.
+	Registry func(cfg config.Config) (*check.Registry, error)
+	// OpenStore opens the node's state store. Defaults to wrapping
+	// store.Open(ctx, cfg.State.DBPath). Never called on --dry-run.
+	OpenStore func(ctx context.Context, cfg config.Config) (StoreAPI, error)
 }
 
 // DefaultDeps wires the real constructors, reading service URLs and
@@ -67,6 +78,14 @@ func DefaultDeps() *Deps {
 		},
 		Host: func(config.Config, config.Secrets) (hostfs.Client, error) {
 			return hostfs.New(""), nil
+		},
+		Registry: checks.Registry,
+		OpenStore: func(ctx context.Context, cfg config.Config) (StoreAPI, error) {
+			st, err := store.Open(ctx, cfg.State.DBPath)
+			if err != nil {
+				return nil, err
+			}
+			return st, nil
 		},
 	}
 }
