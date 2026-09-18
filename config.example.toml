@@ -67,8 +67,9 @@ container_path = "/movies"
 # heartbeat_interval = "5m"
 # # local time-of-day the daily checkpoint run starts, "HH:MM"
 # checkpoint_at = "03:00"
-# # a peer whose last heartbeat is older than this is treated as stale
-# # (3 missed heartbeats at the default heartbeat_interval)
+# # a peer whose last inbound *report* is older than this is shown as stale
+# # in the digest; heartbeats never reset it (15m is 3 missed pushes at the
+# # 5-minute check cycle the peer pushes from)
 # peer_stale_after = "15m"
 # # how long the peer_messages log is kept; the nightly checkpoint job
 # # deletes anything older (default 30 days)
