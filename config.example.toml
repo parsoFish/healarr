@@ -69,7 +69,8 @@ container_path = "/movies"
 #
 # # a *arr queue item stuck in the same state this long is flagged
 # queue_stuck_after = "24h"
-# # a qBittorrent torrent with zero progress for this long is flagged stalled
+# # a qBittorrent torrent still stalled or fetching metadata this long after
+# # it was added is flagged (qBittorrent's own error states are flagged at once)
 # qbit_stalled_after = "1h"
 # # a completed download not imported into its *arr library after this long is flagged
 # completed_not_imported_after = "30m"
@@ -78,11 +79,13 @@ container_path = "/movies"
 #
 # # file extensions that should never appear in a finished download
 # wrong_file_exts = [".exe", ".scr", ".bat", ".lnk", ".msi"]
-# # qBittorrent categories where .iso is also treated as a wrong file extension
+# # qBittorrent categories (matched case-insensitively) where .iso is also
+# # treated as a wrong file extension
 # tv_categories = ["tv"]
 # downloads_dirs = ["/volume1/downloads/tv", "/volume1/downloads/movies"]
 #
-# # a file in a downloads dir with no matching *arr record after this long is an orphan
+# # an entry in a downloads dir that qBittorrent no longer tracks, and whose
+# # mtime is older than this, is an orphan (*arr records are not consulted)
 # orphan_after = "168h"
 # recycle_dirs = ["/volume1/#recycle", "/volume1/downloads/#recycle"]
 # recycle_warn_gb = 20
@@ -100,14 +103,17 @@ container_path = "/movies"
 # # window over which indexer failures are counted
 # indexer_failure_window = "24h"
 #
-# # an Overseerr request stuck pending this long is flagged
+# # an Overseerr request in the "processing" state whose last update is older
+# # than this is flagged
 # overseerr_stuck_after = "168h"
-# # a Plex library scan that hasn't completed after this long is flagged stale
+# # a library is flagged stale when the newest file change under its path is
+# # this much newer than Plex's last scan of that library
 # plex_scan_stale_after = "2h"
 # plex_libraries = [
 #   { title = "TV Shows", path = "/volume1/tv" },
 #   { title = "Movies", path = "/volume1/movies" },
 # ]
 #
-# # a torrent seeded for less than this age is exempt from removal checks
+# # a torrent that completed less than this long ago is exempt from the
+# # safe-to-remove check, however far past its seeding target it is
 # seeded_min_age = "24h"

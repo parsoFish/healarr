@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -201,5 +202,81 @@ func TestEnvOverrideIgnoresEmptyValue(t *testing.T) {
 	}
 	if cfg.Services.Sonarr.URL != "http://sonarr:8989" {
 		t.Errorf("empty env var should not override file value, got %q", cfg.Services.Sonarr.URL)
+	}
+}
+
+// TestValidateAcceptsDefaults proves the shipped defaults are themselves a
+// valid config: a rejection rule that fires on Defaults() would make
+// healarr unstartable out of the box.
+func TestValidateAcceptsDefaults(t *testing.T) {
+	cfg := Defaults()
+	cfg.Node = NodePi
+	if err := validate(cfg); err != nil {
+		t.Fatalf("Defaults() must validate, got %v", err)
+	}
+}
+
+// TestLoadRejectsBadChecksThresholds walks the [checks] thresholds the
+// check engine cannot act on and proves each rejection names the TOML key
+// the operator typed, so the message points at the line to fix.
+func TestLoadRejectsBadChecksThresholds(t *testing.T) {
+	tests := []struct {
+		name    string
+		checks  string
+		wantKey string
+	}{
+		{"zero timeout", "timeout = \"0s\"\n", "checks.timeout"},
+		{"negative timeout", "timeout = \"-1s\"\n", "checks.timeout"},
+		{"negative duration", "orphan_after = \"-168h\"\n", "checks.orphan_after"},
+		{"zero disk warn percent", "disk_warn_percent = 0\n", "checks.disk_warn_percent"},
+		{"negative disk warn percent", "disk_warn_percent = -5\n", "checks.disk_warn_percent"},
+		{"warn above crit", "disk_warn_percent = 95\ndisk_crit_percent = 90\n", "checks.disk_crit_percent"},
+		{"crit above 100", "disk_crit_percent = 120\n", "checks.disk_crit_percent"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := writeFile(t, dir, "config.toml", minimalConfig+"\n[checks]\n"+tt.checks, 0o644)
+			writeFile(t, dir, "secrets.toml", "", 0o600)
+
+			_, _, err := Load(cfgPath)
+			if err == nil {
+				t.Fatalf("expected %s to be rejected", tt.name)
+			}
+			if !strings.Contains(err.Error(), tt.wantKey) {
+				t.Errorf("error %q should name %s", err, tt.wantKey)
+			}
+		})
+	}
+}
+
+// TestValidateRejectsEveryNegativeChecksDuration walks every duration
+// field in Checks by reflection rather than by hand, so a duration added
+// later is covered — and left out of validate's own list, caught.
+func TestValidateRejectsEveryNegativeChecksDuration(t *testing.T) {
+	base := Defaults()
+	base.Node = NodePi
+	checksType := reflect.TypeOf(base.Checks)
+	durationType := reflect.TypeOf(time.Duration(0))
+
+	for i := range checksType.NumField() {
+		field := checksType.Field(i)
+		if field.Type != durationType {
+			continue
+		}
+		t.Run(field.Name, func(t *testing.T) {
+			cfg := base
+			reflect.ValueOf(&cfg.Checks).Elem().Field(i).SetInt(int64(-time.Second))
+
+			err := validate(cfg)
+			if err == nil {
+				t.Fatalf("a negative %s must be rejected", field.Name)
+			}
+			wantKey := "checks." + field.Tag.Get("toml")
+			if !strings.Contains(err.Error(), wantKey) {
+				t.Errorf("error %q should name %s", err, wantKey)
+			}
+		})
 	}
 }
