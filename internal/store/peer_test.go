@@ -180,3 +180,80 @@ func TestLastPeerMessageAtRejectsCorruptRow(t *testing.T) {
 		t.Fatal("expected error parsing a corrupt received_at")
 	}
 }
+
+// TestPrunePeerMessagesKeepsNewerRows proves retention pruning is bounded
+// by the cutoff: only rows received strictly before it go, the count
+// returned is what was actually deleted, and everything at or after the
+// cutoff survives.
+func TestPrunePeerMessagesKeepsNewerRows(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+	old := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
+	cutoff := old.Add(24 * time.Hour)
+	recent := cutoff.Add(time.Hour)
+
+	for _, at := range []time.Time{old, old.Add(time.Minute), recent} {
+		if _, err := s.SavePeerMessage(ctx, "in", "report", config.NodeNAS, []byte("{}"), at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := s.PrunePeerMessages(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("PrunePeerMessages: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("deleted = %d, want 2", deleted)
+	}
+
+	got, ok, err := s.LastPeerMessageAt(ctx, config.NodeNAS, "report")
+	if err != nil || !ok {
+		t.Fatalf("LastPeerMessageAt: ok=%v err=%v", ok, err)
+	}
+	if !got.Equal(recent) {
+		t.Fatalf("surviving row = %v, want the one newer than the cutoff (%v)", got, recent)
+	}
+
+	var count int
+	if err := s.db.QueryRow(`SELECT count(*) FROM peer_messages`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("peer_messages rows = %d, want 1", count)
+	}
+}
+
+// TestPrunePeerMessagesOnEmptyStoreDeletesNothing proves a prune with
+// nothing to remove is a no-op reporting zero, not an error.
+func TestPrunePeerMessagesOnEmptyStoreDeletesNothing(t *testing.T) {
+	s := openTemp(t)
+	deleted, err := s.PrunePeerMessages(context.Background(), time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("PrunePeerMessages: %v", err)
+	}
+	if deleted != 0 {
+		t.Fatalf("deleted = %d, want 0", deleted)
+	}
+}
+
+func TestPrunePeerMessagesErrorsOnClosedStore(t *testing.T) {
+	s := closedStore(t)
+	if _, err := s.PrunePeerMessages(context.Background(), time.Now()); err == nil {
+		t.Fatal("expected error from a closed store")
+	}
+}
+
+// TestPeerMessagesLookupIndexExists guards the index the digest's
+// freshness query (LastPeerMessageAt) and the retention prune both rely
+// on: without it every lookup is a full scan of the table that grows
+// fastest.
+func TestPeerMessagesLookupIndexExists(t *testing.T) {
+	s := openTemp(t)
+	var name string
+	err := s.db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'peer_messages_lookup'`,
+	).Scan(&name)
+	if err != nil {
+		t.Fatalf("peer_messages_lookup index missing: %v", err)
+	}
+}

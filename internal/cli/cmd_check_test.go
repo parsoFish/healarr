@@ -80,6 +80,10 @@ type FakeStore struct {
 
 	CheckpointCalls int
 	CheckpointErr   error
+
+	PrunedBefore     []time.Time
+	PrunedDeleted    int64
+	PrunePeerMsgsErr error
 }
 
 var _ StoreAPI = (*FakeStore)(nil)
@@ -151,6 +155,14 @@ func (f *FakeStore) MarkEmailFailed(_ context.Context, id int64, at time.Time, c
 }
 
 // Checkpoint counts the call and returns CheckpointErr.
+func (f *FakeStore) PrunePeerMessages(_ context.Context, olderThan time.Time) (int64, error) {
+	f.PrunedBefore = append(f.PrunedBefore, olderThan)
+	if f.PrunePeerMsgsErr != nil {
+		return 0, f.PrunePeerMsgsErr
+	}
+	return f.PrunedDeleted, nil
+}
+
 func (f *FakeStore) Checkpoint(context.Context) error {
 	f.CheckpointCalls++
 	return f.CheckpointErr

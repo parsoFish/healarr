@@ -30,9 +30,10 @@ func scheduleTestCfg(node config.Node) config.Config {
 		Node:   node,
 		Checks: config.Checks{Timeout: 5 * time.Second},
 		Agent: config.Agent{
-			HeartbeatInterval: 5 * time.Minute,
-			CheckpointAt:      "03:00",
-			PeerStaleAfter:    15 * time.Minute,
+			HeartbeatInterval:    5 * time.Minute,
+			CheckpointAt:         "03:00",
+			PeerStaleAfter:       15 * time.Minute,
+			PeerMessageRetention: 30 * 24 * time.Hour,
 		},
 		Email: config.Email{DigestAt: "07:00", To: "ops@example.test"},
 	}
@@ -395,5 +396,59 @@ func TestSendHeartbeatRecordErrorPropagates(t *testing.T) {
 
 	if err := a.SendHeartbeat(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("SendHeartbeat() err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// TestScheduleCheckpointJobPrunesBeforeCheckpoint proves the nightly job
+// trims peer_messages to Agent.PeerMessageRetention *before* it
+// checkpoints, so the WAL truncation runs after the deletes rather than
+// leaving a night's worth of them in the WAL.
+func TestScheduleCheckpointJobPrunesBeforeCheckpoint(t *testing.T) {
+	const retention = 48 * time.Hour
+	fs := &fakeStore{PrunePeerMessagesDeleted: 7}
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Store = fs
+		o.Cfg.Agent.PeerMessageRetention = retention
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runAllJobs(c)
+
+	if want := []string{"prune", "checkpoint"}; !reflect.DeepEqual(fs.Ops, want) {
+		t.Fatalf("store ops = %v, want %v", fs.Ops, want)
+	}
+	if len(fs.PrunedBefore) != 1 {
+		t.Fatalf("PrunedBefore = %v, want exactly one cutoff", fs.PrunedBefore)
+	}
+	if want := scheduleT0.Add(-retention); !fs.PrunedBefore[0].Equal(want) {
+		t.Fatalf("prune cutoff = %v, want %v (now - peer_message_retention)", fs.PrunedBefore[0], want)
+	}
+}
+
+// TestScheduleCheckpointJobLogsPruneFailureAndStillCheckpoints proves a
+// failed prune is logged rather than swallowed, and never costs the night
+// its checkpoint — the two are independent pieces of housekeeping.
+func TestScheduleCheckpointJobLogsPruneFailureAndStillCheckpoints(t *testing.T) {
+	fs := &fakeStore{PrunePeerMessagesErr: errors.New("prune boom")}
+	var logBuf strings.Builder
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Store = fs
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	c, err := a.Schedule(context.Background())
+	if err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	runAllJobs(c)
+
+	if fs.CheckpointCalls != 1 {
+		t.Fatalf("CheckpointCalls = %d, want 1 (a failed prune must not skip the checkpoint)", fs.CheckpointCalls)
+	}
+	if !strings.Contains(logBuf.String(), "prune boom") {
+		t.Fatalf("log = %q, want it to mention the prune error", logBuf.String())
 	}
 }

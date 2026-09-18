@@ -70,6 +70,9 @@ container_path = "/movies"
 # # a peer whose last heartbeat is older than this is treated as stale
 # # (3 missed heartbeats at the default heartbeat_interval)
 # peer_stale_after = "15m"
+# # how long the peer_messages log is kept; the nightly checkpoint job
+# # deletes anything older (default 30 days)
+# peer_message_retention = "720h"
 
 # [checks]
 # # per-check timeout; a check that runs past this is reported as failed

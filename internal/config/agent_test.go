@@ -20,9 +20,10 @@ func TestLoadAgentDefaults(t *testing.T) {
 	}
 
 	want := Agent{
-		HeartbeatInterval: 5 * time.Minute,
-		CheckpointAt:      "03:00",
-		PeerStaleAfter:    15 * time.Minute,
+		HeartbeatInterval:    5 * time.Minute,
+		CheckpointAt:         "03:00",
+		PeerStaleAfter:       15 * time.Minute,
+		PeerMessageRetention: 30 * 24 * time.Hour,
 	}
 	if cfg.Agent != want {
 		t.Errorf("Agent = %+v, want %+v", cfg.Agent, want)
@@ -41,6 +42,7 @@ func TestLoadAgentOverridesAndDigestAt(t *testing.T) {
 		"heartbeat_interval = \"1m\"\n" +
 		"checkpoint_at = \"04:30\"\n" +
 		"peer_stale_after = \"20m\"\n" +
+		"peer_message_retention = \"48h\"\n" +
 		"[email]\ndigest_at = \"08:15\"\n"
 	cfgPath := writeFile(t, dir, "config.toml", body, 0o644)
 	writeFile(t, dir, "secrets.toml", "", 0o600)
@@ -51,10 +53,11 @@ func TestLoadAgentOverridesAndDigestAt(t *testing.T) {
 	}
 
 	want := Agent{
-		Timezone:          "America/New_York",
-		HeartbeatInterval: time.Minute,
-		CheckpointAt:      "04:30",
-		PeerStaleAfter:    20 * time.Minute,
+		Timezone:             "America/New_York",
+		HeartbeatInterval:    time.Minute,
+		CheckpointAt:         "04:30",
+		PeerStaleAfter:       20 * time.Minute,
+		PeerMessageRetention: 48 * time.Hour,
 	}
 	if cfg.Agent != want {
 		t.Errorf("Agent = %+v, want %+v", cfg.Agent, want)
@@ -206,5 +209,29 @@ func TestLocationRejectsBadTimezone(t *testing.T) {
 
 	if _, err := cfg.Location(); err == nil {
 		t.Fatal("expected error for unknown timezone")
+	}
+}
+
+// TestLoadRejectsNonPositivePeerMessageRetention proves a zero or negative
+// peer_message_retention is rejected: zero would delete every peer message
+// the moment the nightly prune ran, and negative would keep deleting rows
+// that haven't been written yet.
+func TestLoadRejectsNonPositivePeerMessageRetention(t *testing.T) {
+	tests := []string{"0s", "-1h"}
+	for _, bad := range tests {
+		t.Run(bad, func(t *testing.T) {
+			dir := t.TempDir()
+			body := minimalConfig + "\n[agent]\npeer_message_retention = \"" + bad + "\"\n"
+			cfgPath := writeFile(t, dir, "config.toml", body, 0o644)
+			writeFile(t, dir, "secrets.toml", "", 0o600)
+
+			_, _, err := Load(cfgPath)
+			if err == nil {
+				t.Fatalf("expected peer_message_retention %q to be rejected", bad)
+			}
+			if !strings.Contains(err.Error(), "agent.peer_message_retention") {
+				t.Errorf("error %q should name agent.peer_message_retention", err)
+			}
+		})
 	}
 }

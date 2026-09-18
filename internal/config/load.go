@@ -142,9 +142,10 @@ var hhmmPattern = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 // validateAgent rejects [agent] values the daemon's scheduler could not
 // act on: an unloadable timezone or malformed checkpoint_at would only
 // surface at the first missed run, a non-positive heartbeat_interval
-// would mean the ticker never fires, and a non-positive peer_stale_after
+// would mean the ticker never fires, a non-positive peer_stale_after
 // would make every peer heartbeat look stale immediately (zero) or never
-// stale at all (negative).
+// stale at all (negative), and a non-positive peer_message_retention would
+// have the nightly prune delete the whole peer_messages log.
 func validateAgent(a Agent) error {
 	if a.Timezone != "" {
 		if _, err := time.LoadLocation(a.Timezone); err != nil {
@@ -159,6 +160,9 @@ func validateAgent(a Agent) error {
 	}
 	if a.PeerStaleAfter <= 0 {
 		return fmt.Errorf("config: agent.peer_stale_after must be > 0 (got %s)", a.PeerStaleAfter)
+	}
+	if a.PeerMessageRetention <= 0 {
+		return fmt.Errorf("config: agent.peer_message_retention must be > 0 (got %s)", a.PeerMessageRetention)
 	}
 	return nil
 }

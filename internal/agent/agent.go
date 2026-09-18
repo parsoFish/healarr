@@ -35,6 +35,7 @@ type Store interface {
 	EnqueueEmail(ctx context.Context, to, subject, body string, at time.Time) (int64, error)
 	MarkEmailSent(ctx context.Context, id int64, at time.Time) error
 	MarkEmailFailed(ctx context.Context, id int64, at time.Time, cause error) error
+	PrunePeerMessages(ctx context.Context, olderThan time.Time) (int64, error)
 	Checkpoint(ctx context.Context) error
 }
 

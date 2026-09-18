@@ -66,8 +66,17 @@ type fakeStore struct {
 	MarkEmailFailedErr error
 	FailedEmails       []failedEmailCall
 
+	PrunePeerMessagesErr     error
+	PrunePeerMessagesDeleted int64
+	PrunedBefore             []time.Time
+
 	CheckpointErr   error
 	CheckpointCalls int
+
+	// Ops records, in order, the store operations a scheduled job
+	// performed, so a test can prove the nightly job prunes *before* it
+	// checkpoints rather than merely that both happened.
+	Ops []string
 }
 
 var _ Store = (*fakeStore)(nil)
@@ -130,7 +139,17 @@ func (f *fakeStore) MarkEmailFailed(_ context.Context, id int64, at time.Time, c
 	return f.MarkEmailFailedErr
 }
 
+func (f *fakeStore) PrunePeerMessages(_ context.Context, olderThan time.Time) (int64, error) {
+	f.Ops = append(f.Ops, "prune")
+	f.PrunedBefore = append(f.PrunedBefore, olderThan)
+	if f.PrunePeerMessagesErr != nil {
+		return 0, f.PrunePeerMessagesErr
+	}
+	return f.PrunePeerMessagesDeleted, nil
+}
+
 func (f *fakeStore) Checkpoint(_ context.Context) error {
+	f.Ops = append(f.Ops, "checkpoint")
 	f.CheckpointCalls++
 	return f.CheckpointErr
 }

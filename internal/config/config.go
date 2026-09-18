@@ -57,6 +57,9 @@ type Agent struct {
 	HeartbeatInterval time.Duration `toml:"heartbeat_interval"` // default 5m
 	CheckpointAt      string        `toml:"checkpoint_at"`      // "HH:MM" local, default "03:00"
 	PeerStaleAfter    time.Duration `toml:"peer_stale_after"`   // default 15m (3 missed heartbeats)
+	// PeerMessageRetention is how far back the nightly checkpoint job keeps
+	// peer_messages rows; anything older is pruned (default 720h = 30 days).
+	PeerMessageRetention time.Duration `toml:"peer_message_retention"`
 }
 
 // LLM configures the daily digest model call.

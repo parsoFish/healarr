@@ -82,3 +82,26 @@ func (s *Store) LastPeerMessageAt(ctx context.Context, peer config.Node, kind st
 	}
 	return receivedAt, true, nil
 }
+
+// PrunePeerMessages deletes every peer_messages row received strictly
+// before olderThan and returns how many rows went. peer_messages is the
+// fastest-growing table on either node (one row per heartbeat, per report
+// and per decision, in both directions), and nothing else ever removes
+// from it, so the daemon's nightly job calls this to hold it to
+// Agent.PeerMessageRetention. received_at is stored as an RFC 3339 UTC
+// string by formatTime, so the comparison is both parameterised and
+// chronologically correct.
+func (s *Store) PrunePeerMessages(ctx context.Context, olderThan time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM peer_messages WHERE received_at < ?`, formatTime(olderThan),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("store: prune peer messages: %w", err)
+	}
+
+	deleted, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("store: prune peer messages: rows affected: %w", err)
+	}
+	return deleted, nil
+}

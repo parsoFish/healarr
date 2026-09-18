@@ -183,28 +183,53 @@ func (a *Agent) scheduleDigest(ctx context.Context, c *cron.Cron) error {
 	return nil
 }
 
-// scheduleCheckpoint registers the daily WAL-checkpoint job. ErrCheckpointBusy
-// is expected (another connection is pinning an older WAL snapshot) and is
-// logged at Warn rather than Error: the checkpoint job simply retries the
-// next night.
+// scheduleCheckpoint registers the nightly housekeeping job: prune
+// peer_messages past their retention window, then checkpoint the WAL.
 func (a *Agent) scheduleCheckpoint(ctx context.Context, c *cron.Cron) error {
 	spec, err := dailyCronSpec(a.cfg.Agent.CheckpointAt)
 	if err != nil {
 		return fmt.Errorf("agent: schedule: checkpoint: %w", err)
 	}
-	_, err = c.AddFunc(spec, func() {
-		if err := a.store.Checkpoint(ctx); err != nil {
-			if errors.Is(err, store.ErrCheckpointBusy) {
-				a.logger.Warn("agent: checkpoint busy, retrying next night", "error", err)
-				return
-			}
-			a.logger.Error("agent: scheduled checkpoint failed", "error", err)
-		}
-	})
-	if err != nil {
+	if _, err := c.AddFunc(spec, func() { a.runNightlyMaintenance(ctx) }); err != nil {
 		return fmt.Errorf("agent: schedule: checkpoint: %w", err)
 	}
 	return nil
+}
+
+// runNightlyMaintenance prunes expired peer_messages and then checkpoints
+// the WAL, in that order so the night's deletes are truncated out of the
+// WAL by the checkpoint that follows them rather than waiting a day.
+// Neither step can fail the other: a prune failure is logged and the
+// checkpoint still runs, and ErrCheckpointBusy (another connection pinning
+// an older WAL snapshot) is expected, so it is logged at Warn rather than
+// Error and simply retried the next night.
+func (a *Agent) runNightlyMaintenance(ctx context.Context) {
+	pruned := a.prunePeerMessages(ctx)
+
+	if err := a.store.Checkpoint(ctx); err != nil {
+		if errors.Is(err, store.ErrCheckpointBusy) {
+			a.logger.Warn("agent: checkpoint busy, retrying next night", "error", err)
+			return
+		}
+		a.logger.Error("agent: scheduled checkpoint failed", "error", err)
+		return
+	}
+	a.logger.Info("agent: checkpoint complete", "pruned_peer_messages", pruned)
+}
+
+// prunePeerMessages deletes peer_messages older than
+// Agent.PeerMessageRetention and returns how many went (0 on failure — a
+// prune this job couldn't do is logged, never fatal, and retried the next
+// night).
+func (a *Agent) prunePeerMessages(ctx context.Context) int64 {
+	cutoff := a.now().Add(-a.cfg.Agent.PeerMessageRetention)
+	deleted, err := a.store.PrunePeerMessages(ctx, cutoff)
+	if err != nil {
+		a.logger.Error("agent: prune peer messages failed", "cutoff", cutoff, "error", err)
+		return 0
+	}
+	a.logger.Info("agent: pruned peer messages", "deleted", deleted, "cutoff", cutoff)
+	return deleted
 }
 
 // dailyCronSpec turns an "HH:MM" local time-of-day (Agent.CheckpointAt,

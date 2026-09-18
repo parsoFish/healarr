@@ -23,9 +23,10 @@ func runTestCfg(node config.Node) config.Config {
 		Node:   node,
 		Checks: config.Checks{Timeout: 5 * time.Second},
 		Agent: config.Agent{
-			HeartbeatInterval: 5 * time.Minute,
-			CheckpointAt:      "03:00",
-			PeerStaleAfter:    15 * time.Minute,
+			HeartbeatInterval:    5 * time.Minute,
+			CheckpointAt:         "03:00",
+			PeerStaleAfter:       15 * time.Minute,
+			PeerMessageRetention: 30 * 24 * time.Hour,
 		},
 		Email: config.Email{DigestAt: "07:00", To: "ops@example.test"},
 	}
