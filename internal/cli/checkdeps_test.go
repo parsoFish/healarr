@@ -114,6 +114,38 @@ func TestRegistryForFallsBackWhenUnset(t *testing.T) {
 	}
 }
 
+// TestOpenStoreFallsBackWhenUnset mirrors TestRegistryForFallsBackWhenUnset:
+// a bare &Deps{} must still reach the real store rather than panicking on
+// a nil OpenStore.
+func TestOpenStoreFallsBackWhenUnset(t *testing.T) {
+	deps := &Deps{} // OpenStore left nil
+	cfg := config.Config{Node: config.NodePi, State: config.State{DBPath: filepath.Join(t.TempDir(), "state.db")}}
+
+	st, err := openStore(context.Background(), deps, cfg)
+	if err != nil {
+		t.Fatalf("openStore: %v", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			t.Errorf("close: %v", err)
+		}
+	}()
+	if _, found, err := st.LatestReport(context.Background(), cfg.Node); err != nil || found {
+		t.Errorf("LatestReport on a fresh store = found %t, err %v", found, err)
+	}
+}
+
+func TestOpenStoreUsesDepsOverride(t *testing.T) {
+	deps, fk := newTestDeps()
+	st, err := openStore(context.Background(), deps, config.Config{})
+	if err != nil {
+		t.Fatalf("openStore: %v", err)
+	}
+	if st != StoreAPI(fk.Store) || !fk.Store.Opened {
+		t.Error("expected openStore to use the Deps override")
+	}
+}
+
 func TestRegistryForWrapsError(t *testing.T) {
 	deps, _ := newTestDeps()
 	boom := errors.New("boom")

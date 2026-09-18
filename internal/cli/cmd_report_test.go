@@ -32,10 +32,57 @@ func TestReportGenerateDryRunJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("invalid JSON %q: %v", out, err)
 	}
-	// notify.DigestInput carries no json tags, so keys are its Go field
-	// names verbatim.
-	if got["Node"] != "pi" {
-		t.Errorf("Node = %v, want pi", got["Node"])
+	// notify.DigestInput is json-tagged in the same camelCase as
+	// check.Finding, so --json output is one consistent shape.
+	if got["node"] != "pi" {
+		t.Errorf("node = %v, want pi", got["node"])
+	}
+	for _, key := range []string{"generatedAt", "findings", "errors", "skipped", "checksRun", "metrics"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("missing json key %q in %v", key, got)
+		}
+	}
+	for _, untagged := range []string{"Node", "GeneratedAt", "ChecksRun"} {
+		if _, ok := got[untagged]; ok {
+			t.Errorf("untagged Go field name %q leaked into the JSON", untagged)
+		}
+	}
+}
+
+// TestReportGenerateWithNoStoredReportStampsNow proves an empty store
+// still yields a digest timestamped now, never the year-1 zero time a
+// missing report would otherwise carry into the rendered header.
+func TestReportGenerateWithNoStoredReportStampsNow(t *testing.T) {
+	deps, fk := newTestDeps()
+	fk.Store.LatestFound = false // no report saved yet
+
+	before := time.Now()
+	out := runCLI(t, deps, "--json", "report", "generate")
+	after := time.Now()
+
+	var got struct {
+		GeneratedAt time.Time `json:"generatedAt"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("invalid JSON %q: %v", out, err)
+	}
+	if got.GeneratedAt.Before(before) || got.GeneratedAt.After(after) {
+		t.Errorf("generatedAt = %s, want a stamp between %s and %s", got.GeneratedAt, before, after)
+	}
+}
+
+// TestReportGenerateNoStoredReportRendersRealDate guards the rendered
+// text, which is what actually lands in the operator's inbox.
+func TestReportGenerateNoStoredReportRendersRealDate(t *testing.T) {
+	deps, fk := newTestDeps()
+	fk.Store.LatestFound = false
+
+	out := runCLI(t, deps, "report", "generate")
+	if strings.Contains(out, "0001-01-01") {
+		t.Errorf("digest rendered the zero time: %q", out)
+	}
+	if !strings.Contains(out, time.Now().Format("2006-01-02")) {
+		t.Errorf("digest should carry today's date, got %q", out)
 	}
 }
 

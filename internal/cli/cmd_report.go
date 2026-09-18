@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -89,7 +90,7 @@ func digestFromRun(ctx context.Context, deps *Deps, flags *GlobalFlags, cfg conf
 // digestFromStore reads cfg.Node's open findings and latest report from
 // the store and builds a DigestInput from them.
 func digestFromStore(ctx context.Context, deps *Deps, cfg config.Config) (in notify.DigestInput, err error) {
-	st, err := deps.OpenStore(ctx, cfg)
+	st, err := openStore(ctx, deps, cfg)
 	if err != nil {
 		return notify.DigestInput{}, fmt.Errorf("report generate: open store: %w", err)
 	}
@@ -103,9 +104,17 @@ func digestFromStore(ctx context.Context, deps *Deps, cfg config.Config) (in not
 	if err != nil {
 		return notify.DigestInput{}, fmt.Errorf("report generate: open findings: %w", err)
 	}
-	rep, _, err := st.LatestReport(ctx, cfg.Node)
+	rep, found, err := st.LatestReport(ctx, cfg.Node)
 	if err != nil {
 		return notify.DigestInput{}, fmt.Errorf("report generate: latest report: %w", err)
+	}
+	generatedAt := rep.GeneratedAt
+	if !found {
+		// Nothing has been persisted yet — a fresh install, or a digest
+		// asked for before the first check run. Any open findings are
+		// still worth rendering, but the header must say when this digest
+		// was made rather than print the zero time's year 1.
+		generatedAt = time.Now()
 	}
 
 	findings := make([]check.Finding, 0, len(stored))
@@ -115,7 +124,7 @@ func digestFromStore(ctx context.Context, deps *Deps, cfg config.Config) (in not
 
 	return notify.DigestInput{
 		Node:        cfg.Node,
-		GeneratedAt: rep.GeneratedAt,
+		GeneratedAt: generatedAt,
 		Findings:    findings,
 		Errors:      rep.Errors,
 		Skipped:     rep.Skipped,

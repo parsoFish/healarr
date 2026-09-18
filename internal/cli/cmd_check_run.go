@@ -66,7 +66,7 @@ func runCheckRun(cmd *cobra.Command, deps *Deps, flags *GlobalFlags, all bool, i
 
 	var st StoreAPI
 	if !flags.DryRun {
-		st, err = deps.OpenStore(ctx, cfg)
+		st, err = openStore(ctx, deps, cfg)
 		if err != nil {
 			return fmt.Errorf("check run: open store: %w", err)
 		}

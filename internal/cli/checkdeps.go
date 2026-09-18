@@ -49,6 +49,27 @@ func registryFor(deps *Deps, cfg config.Config) (*check.Registry, error) {
 	return reg, nil
 }
 
+// openStore opens cfg's state store via deps.OpenStore, falling back to
+// the real store when unset (mirroring registryFor and (d *Deps) load), so
+// a bare &Deps{} in a test reaches the same code path production does
+// rather than panicking on a nil function.
+func openStore(ctx context.Context, deps *Deps, cfg config.Config) (StoreAPI, error) {
+	openFn := deps.OpenStore
+	if openFn == nil {
+		openFn = defaultOpenStore
+	}
+	return openFn(ctx, cfg)
+}
+
+// defaultOpenStore opens the node's sqlite store at cfg.State.DBPath.
+func defaultOpenStore(ctx context.Context, cfg config.Config) (StoreAPI, error) {
+	st, err := store.Open(ctx, cfg.State.DBPath)
+	if err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
 // buildCheckDeps constructs check.Deps for cfg.Node. Each service client is
 // built via deps.<Svc> only when its URL is configured, so an unconfigured
 // service stays nil and the relevant checks see check.ErrNotConfigured

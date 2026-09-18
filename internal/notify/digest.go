@@ -29,14 +29,14 @@ const timestampLayout = "2006-01-02 15:04 MST"
 // DigestInput is everything the templated digest renders. Phase 3 fills
 // BaseURL from the NAS report; Phase 5 prepends an LLM narrative.
 type DigestInput struct {
-	Node        config.Node
-	GeneratedAt time.Time
-	Findings    []check.Finding // open findings, already sorted severity desc
-	Errors      []check.CheckError
-	Skipped     []string
-	ChecksRun   int
-	Metrics     map[string]float64
-	BaseURL     string // e.g. "http://192.0.2.20/healarr" — may be empty in Phase 2
+	Node        config.Node        `json:"node"`
+	GeneratedAt time.Time          `json:"generatedAt"`
+	Findings    []check.Finding    `json:"findings"` // open findings, already sorted severity desc
+	Errors      []check.CheckError `json:"errors"`
+	Skipped     []string           `json:"skipped"`
+	ChecksRun   int                `json:"checksRun"`
+	Metrics     map[string]float64 `json:"metrics"`
+	BaseURL     string             `json:"baseUrl"` // e.g. "http://192.0.2.20/healarr" — may be empty in Phase 2
 }
 
 // RenderDigest renders the plain-text digest. It never returns an empty
