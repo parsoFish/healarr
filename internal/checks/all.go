@@ -12,6 +12,7 @@ import (
 	"github.com/parsoFish/healarr/internal/checks/qbit"
 	"github.com/parsoFish/healarr/internal/checks/requests"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/staleness"
 )
 
 // Registry builds the full catalogue for cfg. It returns an error if two
@@ -26,6 +27,7 @@ func Registry(cfg config.Config) (*check.Registry, error) {
 		qbit.Checks(cfg),
 		disk.Checks(cfg),
 		plex.Checks(cfg),
+		staleness.Checks(cfg),
 	}
 	for _, family := range families {
 		for _, c := range family {
