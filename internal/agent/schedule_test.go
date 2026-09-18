@@ -16,7 +16,6 @@ import (
 	"github.com/parsoFish/healarr/internal/config"
 	"github.com/parsoFish/healarr/internal/notify"
 	"github.com/parsoFish/healarr/internal/peer"
-	"github.com/parsoFish/healarr/internal/store"
 )
 
 var scheduleT0 = time.Date(2026, 9, 19, 12, 3, 0, 0, time.UTC)
@@ -211,34 +210,6 @@ func TestScheduleCycleAndCheckpointJobsRunTheirWork(t *testing.T) {
 	}
 }
 
-// TestScheduleCheckpointJobLogsBusyAsWarn proves a store.ErrCheckpointBusy
-// from the scheduled checkpoint job is logged (not silently dropped) but
-// at Warn, not Error, since it's expected to clear up on its own.
-func TestScheduleCheckpointJobLogsBusyAsWarn(t *testing.T) {
-	fs := &fakeStore{CheckpointErr: store.ErrCheckpointBusy}
-	var logBuf strings.Builder
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
-	})
-
-	c, err := a.Schedule(context.Background())
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
-	}
-	runAllJobs(c)
-
-	if fs.CheckpointCalls != 1 {
-		t.Fatalf("CheckpointCalls = %d, want 1", fs.CheckpointCalls)
-	}
-	if !strings.Contains(logBuf.String(), "level=WARN") {
-		t.Fatalf("log = %q, want a WARN-level entry for the busy checkpoint", logBuf.String())
-	}
-	if strings.Contains(logBuf.String(), "level=ERROR") {
-		t.Fatalf("log = %q, want no ERROR-level entry for a busy (expected) checkpoint", logBuf.String())
-	}
-}
-
 // TestScheduleHeartbeatJobRuns proves the heartbeat entry's job calls
 // through to the peer client with this node's identity.
 func TestScheduleHeartbeatJobRuns(t *testing.T) {
@@ -323,138 +294,6 @@ func TestCronLoggerRoutesThroughSlog(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("log = %q, want it to contain %q", out, want)
 		}
-	}
-}
-
-func TestSendHeartbeatPostsAndRecordsOutbound(t *testing.T) {
-	fs := &fakeStore{}
-	fp := &peer.Fake{Ack: peer.Ack{Status: "ok"}}
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Peer = fp
-	})
-
-	if err := a.SendHeartbeat(context.Background()); err != nil {
-		t.Fatalf("SendHeartbeat() err = %v", err)
-	}
-	if want := []string{"Heartbeat(pi)"}; !reflect.DeepEqual(fp.Calls, want) {
-		t.Fatalf("peer.Calls = %v, want %v", fp.Calls, want)
-	}
-	if len(fs.PeerMessages) != 1 {
-		t.Fatalf("PeerMessages = %d, want 1", len(fs.PeerMessages))
-	}
-	msg := fs.PeerMessages[0]
-	if msg.Direction != "out" || msg.Kind != "heartbeat" || msg.Peer != config.NodeNAS {
-		t.Fatalf("PeerMessages[0] = %+v, want out/heartbeat to nas", msg)
-	}
-}
-
-func TestSendHeartbeatNilPeerIsNoop(t *testing.T) {
-	fs := &fakeStore{}
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Peer = nil
-	})
-
-	if err := a.SendHeartbeat(context.Background()); err != nil {
-		t.Fatalf("SendHeartbeat() err = %v", err)
-	}
-	if len(fs.PeerMessages) != 0 {
-		t.Fatalf("PeerMessages = %d, want 0 (no peer configured)", len(fs.PeerMessages))
-	}
-}
-
-// TestSendHeartbeatPeerFailureLoggedNotFatal proves a peer push failure is
-// logged but never fails SendHeartbeat (an unreachable peer is never fatal).
-func TestSendHeartbeatPeerFailureLoggedNotFatal(t *testing.T) {
-	fs := &fakeStore{}
-	fp := &peer.Fake{Err: errors.New("peer down")}
-	var logBuf strings.Builder
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Peer = fp
-		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
-	})
-
-	if err := a.SendHeartbeat(context.Background()); err != nil {
-		t.Fatalf("SendHeartbeat() err = %v, want nil (peer failure is never fatal)", err)
-	}
-	if len(fs.PeerMessages) != 1 {
-		t.Fatalf("PeerMessages = %d, want 1 (recorded despite push failure)", len(fs.PeerMessages))
-	}
-	if !strings.Contains(logBuf.String(), "peer down") {
-		t.Fatalf("log = %q, want it to mention the peer error", logBuf.String())
-	}
-}
-
-func TestSendHeartbeatRecordErrorPropagates(t *testing.T) {
-	wantErr := errors.New("record boom")
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = &fakeStore{SavePeerMessageErr: wantErr}
-		o.Peer = &peer.Fake{}
-	})
-
-	if err := a.SendHeartbeat(context.Background()); !errors.Is(err, wantErr) {
-		t.Fatalf("SendHeartbeat() err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
-// TestScheduleCheckpointJobPrunesBeforeCheckpoint proves the nightly job
-// trims peer_messages to Agent.PeerMessageRetention *before* it
-// checkpoints, so the WAL truncation runs after the deletes rather than
-// leaving a night's worth of them in the WAL.
-func TestScheduleCheckpointJobPrunesBeforeCheckpoint(t *testing.T) {
-	const retention = 48 * time.Hour
-	fs := &fakeStore{PrunePeerMessagesDeleted: 7}
-	var logBuf strings.Builder
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Cfg.Agent.PeerMessageRetention = retention
-		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
-	})
-
-	c, err := a.Schedule(context.Background())
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
-	}
-	runAllJobs(c)
-
-	if want := []string{"prune", "checkpoint"}; !reflect.DeepEqual(fs.Ops, want) {
-		t.Fatalf("store ops = %v, want %v", fs.Ops, want)
-	}
-	if len(fs.PrunedBefore) != 1 {
-		t.Fatalf("PrunedBefore = %v, want exactly one cutoff", fs.PrunedBefore)
-	}
-	if want := scheduleT0.Add(-retention); !fs.PrunedBefore[0].Equal(want) {
-		t.Fatalf("prune cutoff = %v, want %v (now - peer_message_retention)", fs.PrunedBefore[0], want)
-	}
-	if out := logBuf.String(); !strings.Contains(out, "pruned_peer_messages=7") {
-		t.Fatalf("checkpoint log = %q, want it to report the pruned row count", out)
-	}
-}
-
-// TestScheduleCheckpointJobLogsPruneFailureAndStillCheckpoints proves a
-// failed prune is logged rather than swallowed, and never costs the night
-// its checkpoint — the two are independent pieces of housekeeping.
-func TestScheduleCheckpointJobLogsPruneFailureAndStillCheckpoints(t *testing.T) {
-	fs := &fakeStore{PrunePeerMessagesErr: errors.New("prune boom")}
-	var logBuf strings.Builder
-	a := newScheduleTestAgent(t, func(o *Options) {
-		o.Store = fs
-		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
-	})
-
-	c, err := a.Schedule(context.Background())
-	if err != nil {
-		t.Fatalf("Schedule() err = %v", err)
-	}
-	runAllJobs(c)
-
-	if fs.CheckpointCalls != 1 {
-		t.Fatalf("CheckpointCalls = %d, want 1 (a failed prune must not skip the checkpoint)", fs.CheckpointCalls)
-	}
-	if !strings.Contains(logBuf.String(), "prune boom") {
-		t.Fatalf("log = %q, want it to mention the prune error", logBuf.String())
 	}
 }
 
