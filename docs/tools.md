@@ -2,7 +2,9 @@
 
 Reference for the tools to be exposed to the Claude agent. Each tool entry lists tier, target service, and behaviour.
 
-This is the Phase 2+ tool inventory: Phase 1 (this repo state) delivers the typed `internal/clients/*` service clients and the `internal/cli/*` CLI surface these tools will call into, but the tool dispatcher itself has not been built yet. It will live in `internal/check/` (see `docs/architecture.md`'s package layout) alongside the check registry, wrapping each `internal/clients/*` `Client` method as a tool function.
+**Phase 2 update:** `internal/check` + `internal/checks/*` landed in Phase 2 as the deterministic check engine — a `check.Check` struct with a pure `Run(ctx, Deps) (Result, error)` per catalogue row, executed by `internal/check`'s `Registry`/`Run` and persisted by `internal/store` (ADR-017; see `docs/architecture.md`'s "Check tiers" and "State store" sections). That is a different thing from the tool inventory below: those checks are fixed Go functions the CLI runs on demand (`healarr check run`) or a future daemon schedules — not tools an LLM calls. The **tool dispatcher for a future agentic loop**, the thing that would let an LLM call `get_sonarr_queue()` or `blocklist_radarr_release(...)` per the tables below, is still unbuilt; Phase 2 doesn't change that.
+
+This is the Phase 2+ tool inventory: Phase 1 (this repo state) delivers the typed `internal/clients/*` service clients and the `internal/cli/*` CLI surface these tools will call into, but the tool dispatcher itself has not been built yet. It will live alongside the check registry, wrapping each `internal/clients/*` `Client` method as a tool function — see `docs/architecture.md`'s package layout for where it's expected to land.
 
 Tools are grouped by tier. Tier policy carries over unchanged from the original design: Observe is always available, Nudge auto-executes, Correct routes through the `/healarr/` LAN web-approval flow (ADR-014 — this replaced an earlier email-reply approval design, which was dropped before it shipped), Escalate is propose-only.
 
@@ -146,8 +148,8 @@ These tools exist as schema in the agent's prompt so the model knows what shape 
 ## Adding a new tool
 
 1. Pick a tier. If unsure, default to Correct (gated) or Escalate (propose-only).
-2. Add the tool function in `internal/check/` (not yet built as of Phase 1 — see `docs/architecture.md`'s package layout for where it lands). It should be a thin wrapper over the relevant `internal/clients/*` `Client` method, returning a typed result the dispatcher and, eventually, the agent can read — not a raw HTTP response.
-3. Register it in the tool/tier registry within `internal/check/` with the correct tier.
+2. Add the tool function in the (not yet built) tool dispatcher package — `internal/check` is already taken by Phase 2's deterministic check engine, so the dispatcher needs its own home; see `docs/architecture.md`'s package layout for the current plan. It should be a thin wrapper over the relevant `internal/clients/*` `Client` method, returning a typed result the dispatcher and, eventually, the agent can read — not a raw HTTP response.
+3. Register it in the tool/tier registry with the correct tier.
 4. Add a unit test that exercises happy path + at least one error case; the `internal/clients/*` package already ships an `httptest`-backed fake per service (Phase 1) to build it on.
 5. Update this doc.
 

@@ -13,14 +13,14 @@ Ships as a single Go binary — `internal/cli` for the uniform `healarr <service
 | Phase | Scope | Status |
 |---|---|---|
 | **1** — CLI + clients | Uniform CLI, 9 service clients, fixtures, cross-compile CI | ✅ |
-| **2** — Checks + store + report | Check registry, SQLite store, one-shot `report generate` | ⏳ |
+| **2** — Checks + store + report | 21-check registry, SQLite store with dedup/resolve, `check run`/`report generate` verbs | ✅ |
 | **3** — Daemon + peer + digest | Cron daemon, Pi↔NAS peer channel, first real digest email | ⏳ |
 | **4** — Web UI + decisions | `/healarr/` dashboard/decisions page, cleanups, staleness scoring | ⏳ |
 | **5** — LLM digest | Haiku 4.5 digest narrative, budget/cost log, `--no-llm` fallback | ⏳ |
 
 ## Build
 
-Requires Go (see `go.mod` for the minimum version).
+Requires Go (see `go.mod` for the minimum version) — currently Go 1.25+ (needed by `modernc.org/sqlite`). `GOTOOLCHAIN=auto` (the Go default) fetches a matching toolchain automatically if your installed `go` is older.
 
 ```bash
 make build       # local dev build → dist/healarr
@@ -70,9 +70,21 @@ healarr qbit list --filter stalled
 
 # Kernel mount table for the host healarr is running on
 healarr host mounts
+
+# List the full check catalogue, all nodes (id, node(s), tier, cadence)
+healarr check list --json
+
+# Run every check for this node without touching the state store
+healarr check run --all --dry-run --json
+
+# Run one check and persist its findings to the state store
+healarr check run --id disk_pressure_pi_sd
+
+# Render the digest from the store's open findings
+healarr report generate
 ```
 
-Run `healarr --help` or `healarr <service> --help` for the full verb list per service.
+Run `healarr --help` or `healarr <service> --help` for the full verb list per service. See [docs/runbook.md](docs/runbook.md)'s "Running checks by hand" section for the full check catalogue, `--dry-run` semantics, and how findings dedupe/resolve.
 
 ## Documentation
 
