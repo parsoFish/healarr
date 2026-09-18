@@ -15,39 +15,48 @@ import (
 var ErrMissingPeerToken = errors.New("agent: peer listener configured but no peer token set")
 
 // Run starts the peer server (when cfg.Peer.ListenAddr is set) and the
-// cron scheduler (Schedule, given ctx so every job it runs is cancelled
-// alongside ctx rather than running with context.Background()), runs one
+// cron scheduler (Schedule, given runCtx so every job it runs is cancelled
+// alongside it rather than running with context.Background()), runs one
 // immediate check cycle before the scheduler's own entries would first
 // fire, then blocks until ctx is done or the peer server fails early
 // (e.g. it couldn't bind — that's treated as fatal rather than waiting for
 // shutdown to notice it). Shutdown is graceful: cron.Stop waits for any
-// still-running job to finish (which ctx cancellation is what lets that
-// finish promptly instead of hanging), and the peer server
-// (peer.ListenAndServe) waits up to 5s for in-flight requests to finish
-// before closing its listener. It returns the first non-nil error
-// encountered, if any.
+// still-running job to finish, and the peer server (peer.ListenAndServe)
+// waits up to 5s for in-flight requests to finish before closing its
+// listener. It returns the first non-nil error encountered, if any.
+//
+// runCtx is Run's own cancellable child of ctx, and everything Run starts
+// gets it rather than ctx: cancelJobs is what releases a still-running job
+// before cron.Stop is waited on, and it must fire however Run is leaving —
+// a peer server failure with a live ctx (nothing else would ever cancel a
+// job blocked on its context, so the wait below would hang) just as much
+// as an ordinary ctx-triggered shutdown.
 func (a *Agent) Run(ctx context.Context) error {
 	if a.cfg.Peer.ListenAddr != "" && a.peerToken == "" {
 		return fmt.Errorf("agent: run: %w", ErrMissingPeerToken)
 	}
 	a.startedAt = a.now()
 
-	sched, err := a.Schedule(ctx)
+	runCtx, cancelJobs := context.WithCancel(ctx)
+	defer cancelJobs()
+
+	sched, err := a.Schedule(runCtx)
 	if err != nil {
 		return fmt.Errorf("agent: run: %w", err)
 	}
 
-	serverErrCh, err := a.startPeerServer(ctx)
+	serverErrCh, err := a.startPeerServer(runCtx)
 	if err != nil {
 		return fmt.Errorf("agent: run: %w", err)
 	}
 
-	if _, _, err := a.RunCycle(ctx, initialCycleCadence); err != nil {
+	if _, _, err := a.RunCycle(runCtx, initialCycleCadence); err != nil {
 		a.logger.Error("agent: run: initial cycle failed", "error", err)
 	}
 
 	sched.Start()
 	serverErr := a.awaitShutdownOrServerFailure(ctx, serverErrCh)
+	cancelJobs()
 	<-sched.Stop().Done()
 
 	if serverErr != nil {

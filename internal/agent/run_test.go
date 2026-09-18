@@ -262,3 +262,58 @@ func TestRunExecutesAnImmediateCycleBeforeBlocking(t *testing.T) {
 		t.Fatalf("SavedReports = %d, want 1 (the immediate cycle ran)", len(fs.SavedReports))
 	}
 }
+
+// TestRunCancelsJobsWhenPeerServerFails proves the server-failure path
+// cancels the scheduler's jobs before waiting for them. ctx is live and
+// never cancelled, so the only thing that can release a job blocked on its
+// own context (here a heartbeat that waits for ctx.Done()) is Run itself:
+// without that cancellation, cron.Stop()'s wait for the in-flight job never
+// finishes and Run hangs instead of surfacing the bind error. The context
+// the initial cycle was handed (captured through Options.Deps, which
+// RunCycle calls with exactly that context) must therefore be done by the
+// time Run returns.
+func TestRunCancelsJobsWhenPeerServerFails(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	jobCtx := make(chan context.Context, 1)
+	tp := newTestPeerClient(true) // Heartbeat blocks until its ctx is done
+	a := newRunTestAgent(t, func(o *Options) {
+		o.Cfg.Peer.ListenAddr = ln.Addr().String() // already in use: the bind fails
+		o.PeerToken = "tok"
+		o.Peer = tp
+		o.Cfg.Agent.HeartbeatInterval = time.Millisecond // fires almost immediately
+		o.Registry = registryWith(noopCheck("pi-5m", config.NodePi, initialCycleCadence))
+		o.Deps = func(ctx context.Context) (check.Deps, error) {
+			select {
+			case jobCtx <- ctx:
+			default:
+			}
+			return check.Deps{Node: config.NodePi, Now: func() time.Time { return runT0 }}, nil
+		}
+	})
+
+	done := make(chan error, 1)
+	go func() { done <- a.Run(context.Background()) }()
+
+	select {
+	case runErr := <-done:
+		if runErr == nil {
+			t.Fatal("Run() err = nil, want the peer server bind error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return within 1s of the peer server's bind failure")
+	}
+
+	select {
+	case got := <-jobCtx:
+		if got.Err() == nil {
+			t.Fatal("the context Run gave its jobs was never cancelled")
+		}
+	default:
+		t.Fatal("the initial cycle never ran, so no job context was captured")
+	}
+}
