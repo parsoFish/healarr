@@ -200,10 +200,12 @@ func assertIncidentFixture(t *testing.T, res check.Result) {
 	}
 }
 
-// probeKey builds the docker.Fake ExecOutByCmd key for one container's
-// mount probe, so the tests track the probe command's exact form.
+// probeKey spells out the docker.Fake ExecOutByCmd key for one container's
+// mount probe. It is written out by hand rather than delegating to
+// probeCmd, so that a change to the command the check actually issues
+// fails these fixtures instead of silently following along.
 func probeKey(container, path string) string {
-	return container + " sh -c " + probeCmd(path)
+	return container + " sh -c ( stat -c %d / '" + path + "'; ls -A '" + path + "' | wc -l ) 2>/dev/null"
 }
 
 // TestMountRaceParseFailureDoesNotAbortRemainingMounts proves an
