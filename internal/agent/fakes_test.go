@@ -73,6 +73,11 @@ type fakeStore struct {
 	CheckpointErr   error
 	CheckpointCalls int
 
+	// Phase 4 (qbit_delete handling) additions.
+	RecordRemediationErr error
+	Remediations         []store.Remediation
+	nextRemediationID    int64
+
 	// Ops records, in order, the store operations a scheduled job
 	// performed, so a test can prove the nightly job prunes *before* it
 	// checkpoints rather than merely that both happened.
@@ -152,6 +157,18 @@ func (f *fakeStore) Checkpoint(_ context.Context) error {
 	f.Ops = append(f.Ops, "checkpoint")
 	f.CheckpointCalls++
 	return f.CheckpointErr
+}
+
+// RecordRemediation records r and returns an auto-incrementing id
+// (starting at 1, like a real sqlite rowid) unless RecordRemediationErr
+// is set.
+func (f *fakeStore) RecordRemediation(_ context.Context, r store.Remediation) (int64, error) {
+	f.Remediations = append(f.Remediations, r)
+	if f.RecordRemediationErr != nil {
+		return 0, f.RecordRemediationErr
+	}
+	f.nextRemediationID++
+	return f.nextRemediationID, nil
 }
 
 // fakeDeps returns a Deps-building func for Options.Deps that always

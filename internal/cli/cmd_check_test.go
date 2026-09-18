@@ -84,6 +84,11 @@ type FakeStore struct {
 	PrunedBefore     []time.Time
 	PrunedDeleted    int64
 	PrunePeerMsgsErr error
+
+	// Phase 4 (decision/qbit_delete) addition.
+	Remediations         []store.Remediation
+	RecordRemediationErr error
+	nextRemediationID    int64
 }
 
 var _ StoreAPI = (*FakeStore)(nil)
@@ -166,6 +171,18 @@ func (f *FakeStore) PrunePeerMessages(_ context.Context, olderThan time.Time) (i
 func (f *FakeStore) Checkpoint(context.Context) error {
 	f.CheckpointCalls++
 	return f.CheckpointErr
+}
+
+// RecordRemediation records r and returns an auto-incrementing id
+// (starting at 1, like a real sqlite rowid) unless RecordRemediationErr
+// is set.
+func (f *FakeStore) RecordRemediation(_ context.Context, r store.Remediation) (int64, error) {
+	f.Remediations = append(f.Remediations, r)
+	if f.RecordRemediationErr != nil {
+		return 0, f.RecordRemediationErr
+	}
+	f.nextRemediationID++
+	return f.nextRemediationID, nil
 }
 
 func TestCheckListShowsEveryRegisteredCheck(t *testing.T) {

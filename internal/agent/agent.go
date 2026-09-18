@@ -32,6 +32,7 @@ type Store interface {
 	OpenFindings(ctx context.Context, node config.Node) ([]store.StoredFinding, error)
 	SavePeerMessage(ctx context.Context, direction, kind string, peer config.Node, payload []byte, at time.Time) (int64, error)
 	LastPeerMessageAt(ctx context.Context, peer config.Node, kind string) (time.Time, bool, error)
+	RecordRemediation(ctx context.Context, r store.Remediation) (int64, error)
 	EnqueueEmail(ctx context.Context, to, subject, body string, at time.Time) (int64, error)
 	MarkEmailSent(ctx context.Context, id int64, at time.Time) error
 	MarkEmailFailed(ctx context.Context, id int64, at time.Time, cause error) error
