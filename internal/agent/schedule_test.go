@@ -406,9 +406,11 @@ func TestSendHeartbeatRecordErrorPropagates(t *testing.T) {
 func TestScheduleCheckpointJobPrunesBeforeCheckpoint(t *testing.T) {
 	const retention = 48 * time.Hour
 	fs := &fakeStore{PrunePeerMessagesDeleted: 7}
+	var logBuf strings.Builder
 	a := newScheduleTestAgent(t, func(o *Options) {
 		o.Store = fs
 		o.Cfg.Agent.PeerMessageRetention = retention
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 	})
 
 	c, err := a.Schedule(context.Background())
@@ -425,6 +427,9 @@ func TestScheduleCheckpointJobPrunesBeforeCheckpoint(t *testing.T) {
 	}
 	if want := scheduleT0.Add(-retention); !fs.PrunedBefore[0].Equal(want) {
 		t.Fatalf("prune cutoff = %v, want %v (now - peer_message_retention)", fs.PrunedBefore[0], want)
+	}
+	if out := logBuf.String(); !strings.Contains(out, "pruned_peer_messages=7") {
+		t.Fatalf("checkpoint log = %q, want it to report the pruned row count", out)
 	}
 }
 

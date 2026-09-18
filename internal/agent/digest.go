@@ -65,6 +65,7 @@ func (a *Agent) SendDigest(ctx context.Context) (int64, error) {
 	if err := a.store.MarkEmailSent(ctx, id, a.now()); err != nil {
 		a.logger.Error("agent: send digest: mark sent", "id", id, "error", err)
 	}
+	a.logger.Info("agent: digest sent", "outbox_id", id, "subject", input.Subject())
 	return id, nil
 }
 

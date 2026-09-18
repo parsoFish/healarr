@@ -172,7 +172,7 @@ func (a *Agent) scheduleHeartbeat(ctx context.Context, c *cron.Cron) error {
 // gap in the schedule. On the NAS the same absence is the design, so it
 // passes without comment.
 func (a *Agent) scheduleDigest(ctx context.Context, c *cron.Cron) error {
-	if !a.HasSender() || a.cfg.Email.To == "" {
+	if !a.digestEnabled() {
 		if a.cfg.Node == config.NodePi {
 			a.logger.Warn("agent: digest disabled: the pi needs both a mail sender and email.to",
 				"has_sender", a.HasSender(), "has_recipient", a.cfg.Email.To != "")
@@ -193,6 +193,11 @@ func (a *Agent) scheduleDigest(ctx context.Context, c *cron.Cron) error {
 	}
 	return nil
 }
+
+// digestEnabled reports whether this agent can actually deliver a daily
+// digest: it needs both a sender to hand the mail to and a recipient to
+// address it to (see scheduleDigest).
+func (a *Agent) digestEnabled() bool { return a.HasSender() && a.cfg.Email.To != "" }
 
 // scheduleCheckpoint registers the nightly housekeeping job: prune
 // peer_messages past their retention window, then checkpoint the WAL.

@@ -299,3 +299,53 @@ func TestRunCycleNoPeerNeverPushes(t *testing.T) {
 		t.Fatalf("PeerMessages = %d, want 0 (no peer configured)", len(fs.PeerMessages))
 	}
 }
+
+// TestRunCycleLogsCompletedCycle proves every cycle that actually ran
+// checks reports its outcome at Info: without it a healthy daemon is
+// indistinguishable in the log from a stalled one, since nothing else is
+// emitted between failures.
+func TestRunCycleLogsCompletedCycle(t *testing.T) {
+	var logBuf strings.Builder
+	fs := &fakeStore{}
+	a, _ := newTestAgent(t, func(o *Options) {
+		o.Cfg = testCfg(config.NodeNAS)
+		o.Registry = registryWith(noopCheck("nas-5m", config.NodeNAS, fiveMin))
+		o.Store = fs
+		o.Peer = &peer.Fake{}
+		o.Deps = fakeDeps(check.Deps{Node: config.NodeNAS, Now: func() time.Time { return cycleT0 }}, nil)
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	if _, _, err := a.RunCycle(context.Background(), fiveMin); err != nil {
+		t.Fatalf("RunCycle() err = %v", err)
+	}
+
+	out := logBuf.String()
+	for _, want := range []string{"cadence=5m0s", "checks_run=1", "checks_failed=0", "findings=0", "report_id=1", "pushed=true"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("cycle log = %q, want it to report %q", out, want)
+		}
+	}
+}
+
+// TestRunCycleLogsPushedFalseWhenThePeerRejectsIt proves the cycle line
+// distinguishes a report that reached the peer from one that didn't,
+// which is the difference between a stale peer section in tomorrow's
+// digest being expected or not.
+func TestRunCycleLogsPushedFalseWhenThePeerRejectsIt(t *testing.T) {
+	var logBuf strings.Builder
+	a, _ := newTestAgent(t, func(o *Options) {
+		o.Cfg = testCfg(config.NodeNAS)
+		o.Registry = registryWith(noopCheck("nas-5m", config.NodeNAS, fiveMin))
+		o.Peer = &peer.Fake{Err: errors.New("peer down")}
+		o.Deps = fakeDeps(check.Deps{Node: config.NodeNAS, Now: func() time.Time { return cycleT0 }}, nil)
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	if _, _, err := a.RunCycle(context.Background(), fiveMin); err != nil {
+		t.Fatalf("RunCycle() err = %v", err)
+	}
+	if !strings.Contains(logBuf.String(), "pushed=false") {
+		t.Fatalf("cycle log = %q, want pushed=false", logBuf.String())
+	}
+}

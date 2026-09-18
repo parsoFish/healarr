@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/parsoFish/healarr/internal/peer"
 )
 
@@ -44,6 +46,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent: run: %w", err)
 	}
+	if err := a.logStartup(sched); err != nil {
+		return fmt.Errorf("agent: run: %w", err)
+	}
 
 	serverErrCh, err := a.startPeerServer(runCtx)
 	if err != nil {
@@ -62,6 +67,35 @@ func (a *Agent) Run(ctx context.Context) error {
 	if serverErr != nil {
 		return fmt.Errorf("agent: run: peer server: %w", serverErr)
 	}
+	return nil
+}
+
+// logStartup emits the one line that says what this daemon is about to do:
+// which node and version came up, in which timezone, whether the peer
+// channel and the digest are wired, and how many cron entries are
+// actually registered. Without it a healthy start is silent, so an
+// operator reading the log after a restart cannot tell a daemon that came
+// up fully configured from one whose peer or digest quietly isn't there.
+// The timezone is resolved rather than echoed so the log names the zone
+// the schedules really run in, including the host default an empty
+// agent.timezone means.
+func (a *Agent) logStartup(sched *cron.Cron) error {
+	loc, err := a.cfg.Location()
+	if err != nil {
+		return fmt.Errorf("startup log: %w", err)
+	}
+	a.logger.Info("agent: starting",
+		"node", a.cfg.Node,
+		"version", a.version,
+		"timezone", loc.String(),
+		"peer_listen_addr", a.cfg.Peer.ListenAddr,
+		"peer_configured", a.peer != nil,
+		"heartbeat_enabled", a.peer != nil,
+		"digest_enabled", a.digestEnabled(),
+		"digest_at", a.cfg.Email.DigestAt,
+		"checkpoint_at", a.cfg.Agent.CheckpointAt,
+		"cron_entries", len(sched.Entries()),
+	)
 	return nil
 }
 

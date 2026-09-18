@@ -349,3 +349,26 @@ func TestToFindingsEmptyInputReturnsEmptyNotNil(t *testing.T) {
 		t.Fatalf("toFindings(nil) = %+v, want empty", got)
 	}
 }
+
+// TestSendDigestLogsSentDigest proves a delivered digest is recorded at
+// Info with the outbox row it came from, so "did this morning's digest go
+// out?" is answerable from the log alone, without opening the database.
+func TestSendDigestLogsSentDigest(t *testing.T) {
+	var logBuf strings.Builder
+	a := newDigestTestAgent(t, func(o *Options) {
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	id, err := a.SendDigest(context.Background())
+	if err != nil {
+		t.Fatalf("SendDigest() err = %v", err)
+	}
+
+	out := logBuf.String()
+	if !strings.Contains(out, "outbox_id=1") || id != 1 {
+		t.Fatalf("digest log = %q (id=%d), want it to name outbox id 1", out, id)
+	}
+	if !strings.Contains(out, "subject=") {
+		t.Fatalf("digest log = %q, want it to name the subject", out)
+	}
+}

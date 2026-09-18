@@ -11,6 +11,7 @@ import (
 
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/notify"
 )
 
 var runT0 = time.Date(2026, 9, 19, 12, 3, 0, 0, time.UTC)
@@ -316,5 +317,38 @@ func TestRunCancelsJobsWhenPeerServerFails(t *testing.T) {
 		}
 	default:
 		t.Fatal("the initial cycle never ran, so no job context was captured")
+	}
+}
+
+// TestRunLogsStartupSummary proves the daemon says what it is going to do
+// as it starts: an operator reading `journalctl -u healarr` after a
+// restart can tell from one line which node and version came up, which
+// schedules are live, and whether the peer and digest are wired — without
+// waiting for the first cycle to produce evidence.
+func TestRunLogsStartupSummary(t *testing.T) {
+	var logBuf strings.Builder
+	a := newRunTestAgent(t, func(o *Options) {
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+		o.Peer = newTestPeerClient(false)
+		o.Sender = &notify.FakeSender{}
+		o.Cfg.Agent.Timezone = "Australia/Brisbane"
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runWithTimeout(t, a, ctx); err != nil {
+		t.Fatalf("Run() err = %v, want nil", err)
+	}
+
+	out := logBuf.String()
+	for _, want := range []string{
+		"node=pi", "version=v-test", "timezone=Australia/Brisbane",
+		"peer_configured=true", "heartbeat_enabled=true",
+		"digest_enabled=true", "digest_at=07:00", "checkpoint_at=03:00",
+		"cron_entries=",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("startup log = %q, want it to report %q", out, want)
+		}
 	}
 }
