@@ -78,19 +78,23 @@ func (c *HTTPClient) Ping(ctx context.Context) error {
 }
 
 // rawHistoryRow mirrors one row of get_history's data.data array.
-// rating_key/parent_rating_key/grandparent_rating_key are JSON integers;
-// json.Number accepts both quoted and bare numeric values and null.
+// rating_key/parent_rating_key/grandparent_rating_key are JSON-integer-ish
+// fields, but Tautulli sends some of them as "" instead (e.g. a movie row
+// has no parent hierarchy, so parent_rating_key/grandparent_rating_key
+// come back as ""); watched_status/percent_complete/date can likewise
+// arrive as quoted numeric strings on some rows. The loose* wrapper types
+// tolerate all of that instead of failing the whole decode.
 type rawHistoryRow struct {
-	RatingKey            json.Number `json:"rating_key"`
-	ParentRatingKey      json.Number `json:"parent_rating_key"`
-	GrandparentRatingKey json.Number `json:"grandparent_rating_key"`
-	Title                string      `json:"title"`
-	GrandparentTitle     string      `json:"grandparent_title"`
-	MediaType            string      `json:"media_type"`
-	User                 string      `json:"user"`
-	Date                 epochTime   `json:"date"`
-	WatchedStatus        float64     `json:"watched_status"`
-	PercentComplete      int         `json:"percent_complete"`
+	RatingKey            looseNumberString `json:"rating_key"`
+	ParentRatingKey      looseNumberString `json:"parent_rating_key"`
+	GrandparentRatingKey looseNumberString `json:"grandparent_rating_key"`
+	Title                string            `json:"title"`
+	GrandparentTitle     string            `json:"grandparent_title"`
+	MediaType            string            `json:"media_type"`
+	User                 string            `json:"user"`
+	Date                 epochTime         `json:"date"`
+	WatchedStatus        looseFloat        `json:"watched_status"`
+	PercentComplete      looseInt          `json:"percent_complete"`
 }
 
 type rawHistoryData struct {
@@ -119,8 +123,8 @@ func (c *HTTPClient) History(ctx context.Context, since time.Time, length int) (
 			MediaType:            r.MediaType,
 			User:                 r.User,
 			Date:                 r.Date.Time,
-			WatchedStatus:        r.WatchedStatus,
-			PercentComplete:      r.PercentComplete,
+			WatchedStatus:        float64(r.WatchedStatus),
+			PercentComplete:      int(r.PercentComplete),
 		})
 	}
 	return out, nil

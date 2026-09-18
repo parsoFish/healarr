@@ -108,6 +108,65 @@ func TestEpochTimeZeroForNonPositiveValue(t *testing.T) {
 	}
 }
 
+func TestEpochTimeZeroForNull(t *testing.T) {
+	var e epochTime
+	if err := e.UnmarshalJSON([]byte("null")); err != nil {
+		t.Fatal(err)
+	}
+	if !e.IsZero() {
+		t.Fatalf("expected zero time for null, got %v", e.Time)
+	}
+}
+
+func TestEpochTimeRejectsUnquotableValue(t *testing.T) {
+	var e epochTime
+	if err := e.UnmarshalJSON([]byte(`"\z"`)); err == nil {
+		t.Fatal("expected unquote error for malformed quoted value")
+	}
+}
+
+func TestLooseFloatHandlesNullAndErrors(t *testing.T) {
+	var f looseFloat
+	if err := f.UnmarshalJSON([]byte("null")); err != nil || f != 0 {
+		t.Fatalf("null: got %v, err %v", f, err)
+	}
+	if err := f.UnmarshalJSON([]byte(`"\z"`)); err == nil {
+		t.Fatal("expected unquote error for malformed quoted value")
+	}
+	if err := f.UnmarshalJSON([]byte(`"not-a-number"`)); err == nil {
+		t.Fatal("expected parse error for non-numeric quoted value")
+	}
+}
+
+func TestLooseIntHandlesNullAndErrors(t *testing.T) {
+	var n looseInt
+	if err := n.UnmarshalJSON([]byte("null")); err != nil || n != 0 {
+		t.Fatalf("null: got %v, err %v", n, err)
+	}
+	if err := n.UnmarshalJSON([]byte(`"\z"`)); err == nil {
+		t.Fatal("expected unquote error for malformed quoted value")
+	}
+	if err := n.UnmarshalJSON([]byte(`"not-a-number"`)); err == nil {
+		t.Fatal("expected parse error for non-numeric quoted value")
+	}
+}
+
+func TestLooseNumberStringHandlesNullAndErrors(t *testing.T) {
+	var s looseNumberString
+	if err := s.UnmarshalJSON([]byte("null")); err != nil || s != "" {
+		t.Fatalf("null: got %q, err %v", s, err)
+	}
+	if err := s.UnmarshalJSON([]byte(`"\z"`)); err == nil {
+		t.Fatal("expected unquote error for malformed quoted value")
+	}
+	if err := s.UnmarshalJSON([]byte(`"5001"`)); err != nil || s != "5001" {
+		t.Fatalf("quoted numeric: got %q, err %v", s, err)
+	}
+	if s.String() != "5001" {
+		t.Fatalf("String() = %q, want %q", s.String(), "5001")
+	}
+}
+
 func TestFakeRecordsAllCallsAndPropagatesErr(t *testing.T) {
 	wantErr := context.DeadlineExceeded
 	f := &Fake{
