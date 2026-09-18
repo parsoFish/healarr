@@ -93,3 +93,29 @@ func TestDashboardReturns500OnStoreError(t *testing.T) {
 		t.Fatalf("GET / with store error = %d, want 500", status)
 	}
 }
+
+// TestDashboardRendersAtBarePathWithoutTrailingSlash proves
+// cfg.Web.BasePath is trailing-slash tolerant the other way round too
+// (TestNormalizeBasePath already covers config normalisation): hitting
+// the base path itself, with no trailing slash, must render the
+// dashboard directly rather than 404 or requiring a redirect first.
+func TestDashboardRendersAtBarePathWithoutTrailingSlash(t *testing.T) {
+	fs := &fakeStore{
+		OpenFindingsByNode: map[config.Node][]store.StoredFinding{
+			config.NodePi: {
+				{Finding: check.Finding{
+					CheckID: "disk_pressure_pi_sd", EntityKey: "/", Severity: check.SeverityWarn,
+					Summary: "example-disk-pressure-summary",
+				}},
+			},
+		},
+	}
+
+	status, body := getAuthenticatedPage(t, fs, nil, "/healarr")
+	if status != http.StatusOK {
+		t.Fatalf("GET /healarr (no trailing slash) = %d, want 200; body: %s", status, body)
+	}
+	if !strings.Contains(body, "example-disk-pressure-summary") {
+		t.Errorf("dashboard body (bare base path) missing expected content; body: %s", body)
+	}
+}

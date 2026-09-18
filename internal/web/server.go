@@ -46,7 +46,6 @@ type Store interface {
 	LatestReport(ctx context.Context, node config.Node) (check.Report, bool, error)
 	PendingDecisions(ctx context.Context) ([]store.Decision, error)
 	CreateDecision(ctx context.Context, entityKey, kind string, at time.Time) (int64, error)
-	DecisionByID(ctx context.Context, id int64) (store.Decision, bool, error)
 	RecentRemediations(ctx context.Context, since time.Time) ([]store.Remediation, error)
 	FindingHistory(ctx context.Context, node config.Node, since time.Time, limit int) ([]store.StoredFinding, error)
 	LastPeerMessageAt(ctx context.Context, peer config.Node, kind string) (time.Time, bool, error)

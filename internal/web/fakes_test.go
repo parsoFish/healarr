@@ -46,8 +46,6 @@ type fakeStore struct {
 	CreateDecisionErr   error
 	CreateDecisionCalls []createDecisionCall
 
-	DecisionsByID map[int64]store.Decision
-
 	Remediations    []store.Remediation
 	RemediationsErr error
 
@@ -88,11 +86,6 @@ func (f *fakeStore) CreateDecision(_ context.Context, entityKey, kind string, at
 		return 0, f.CreateDecisionErr
 	}
 	return f.CreateDecisionID, nil
-}
-
-func (f *fakeStore) DecisionByID(_ context.Context, id int64) (store.Decision, bool, error) {
-	d, ok := f.DecisionsByID[id]
-	return d, ok, nil
 }
 
 func (f *fakeStore) RecentRemediations(_ context.Context, _ time.Time) ([]store.Remediation, error) {
