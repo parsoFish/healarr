@@ -31,7 +31,12 @@ func executeHostRemove(ctx context.Context, d check.Deps, p Plan) (Result, error
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: not under a configured directory, refusing to remove", item.Key))
 			continue
 		}
-		if err := d.Host.Remove(ctx, item.Key); err != nil {
+		// Remove the cleaned path, not the raw item.Key: underAnyPrefix
+		// validated the cleaned form (isUnderDir cleans both sides), so
+		// the path actually removed must be the one that was actually
+		// checked, not a merely-equivalent uncleaned string.
+		cleaned := filepath.Clean(item.Key)
+		if err := d.Host.Remove(ctx, cleaned); err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("%s: %v", item.Key, err))
 			continue
 		}

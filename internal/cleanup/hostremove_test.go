@@ -49,3 +49,46 @@ func TestExecuteHostRemoveRejectsAKindThatDoesNotRemoveHostPaths(t *testing.T) {
 		t.Fatalf("Removed = %v, want nothing removed", host.Removed)
 	}
 }
+
+// TestExecuteHostRemoveCleansPathBeforeRemoving proves the path handed to
+// Host.Remove is exactly the cleaned form underAnyPrefix validated as
+// safe — not the raw, uncleaned item.Key — so a redundant "." segment
+// can't leave the validated path and the removed path pointing at two
+// different (if equivalent) strings.
+func TestExecuteHostRemoveCleansPathBeforeRemoving(t *testing.T) {
+	host := &hostfs.Fake{}
+	cfg := config.Config{Checks: config.Checks{RecycleDirs: []string{"/data/recycle"}}}
+	plan := Plan{Kind: KindRecycle, Items: []PlanItem{{Key: "/data/recycle/./old.mkv", Bytes: 10}}}
+
+	res, err := executeHostRemove(context.Background(), baseDeps(cfg, withHost(host)), plan)
+	if err != nil {
+		t.Fatalf("executeHostRemove: %v", err)
+	}
+	if res.Executed != 1 || len(res.Errors) != 0 {
+		t.Fatalf("res = %+v, want Executed=1 no errors", res)
+	}
+	if len(host.Removed) != 1 || host.Removed[0] != "/data/recycle/old.mkv" {
+		t.Fatalf("Removed = %v, want [/data/recycle/old.mkv] (cleaned)", host.Removed)
+	}
+}
+
+// TestExecuteHostRemoveRefusesDotDotTraversal proves a literal ".."
+// traversal segment can't walk a removal outside the configured
+// directory, even though the raw string still starts with the allowed
+// prefix's characters.
+func TestExecuteHostRemoveRefusesDotDotTraversal(t *testing.T) {
+	host := &hostfs.Fake{}
+	cfg := config.Config{Checks: config.Checks{RecycleDirs: []string{"/data/recycle"}}}
+	plan := Plan{Kind: KindRecycle, Items: []PlanItem{{Key: "/data/recycle/../etc/x", Bytes: 10}}}
+
+	res, err := executeHostRemove(context.Background(), baseDeps(cfg, withHost(host)), plan)
+	if err != nil {
+		t.Fatalf("executeHostRemove: %v", err)
+	}
+	if res.Executed != 0 || len(res.Errors) != 1 {
+		t.Fatalf("res = %+v, want Executed=0 and one refusal", res)
+	}
+	if len(host.Removed) != 0 {
+		t.Fatalf("Removed = %v, want nothing removed", host.Removed)
+	}
+}
