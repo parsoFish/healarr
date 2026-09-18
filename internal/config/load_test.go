@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, dir, name, body string, mode os.FileMode) string {
@@ -124,6 +125,28 @@ func TestLoadErrorsWhenSecretsFileMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "secrets file") {
 		t.Errorf("expected error to mention %q, got %q", "secrets file", err.Error())
+	}
+}
+
+func TestLoadChecksDefaultsAndOverride(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalConfig + "\n[checks]\nqueue_stuck_after = \"6h\"\ndisk_paths = [\"/volume1\"]\n"
+	cfgPath := writeFile(t, dir, "config.toml", body, 0o644)
+	writeFile(t, dir, "secrets.toml", "", 0o600)
+
+	cfg, _, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Checks.QueueStuckAfter != 6*time.Hour {
+		t.Errorf("QueueStuckAfter = %v, want %v", cfg.Checks.QueueStuckAfter, 6*time.Hour)
+	}
+	wantPaths := []string{"/volume1"}
+	if len(cfg.Checks.DiskPaths) != len(wantPaths) || cfg.Checks.DiskPaths[0] != wantPaths[0] {
+		t.Errorf("DiskPaths = %v, want %v", cfg.Checks.DiskPaths, wantPaths)
+	}
+	if cfg.Checks.DiskWarnPercent != 85 {
+		t.Errorf("DiskWarnPercent = %v, want untouched default 85", cfg.Checks.DiskWarnPercent)
 	}
 }
 

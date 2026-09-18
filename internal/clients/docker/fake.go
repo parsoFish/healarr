@@ -12,8 +12,11 @@ type Fake struct {
 	LogsByName map[string]string
 	Usage      DiskUsage
 	ExecOut    map[string]string
-	Calls      []string
-	Err        error
+	// ExecOutByCmd, when set, overrides ExecOut for an exact command. Key is
+	// container + " " + strings.Join(args, " ").
+	ExecOutByCmd map[string]string
+	Calls        []string
+	Err          error
 }
 
 var _ Client = (*Fake)(nil)
@@ -40,5 +43,9 @@ func (f *Fake) PruneImages(_ context.Context, dangling bool) (int64, error) {
 }
 
 func (f *Fake) Exec(_ context.Context, container string, args ...string) (string, error) {
+	key := container + " " + strings.Join(args, " ")
+	if out, ok := f.ExecOutByCmd[key]; ok {
+		return out, f.record("Exec(%s, %s)", container, strings.Join(args, " "))
+	}
 	return f.ExecOut[container], f.record("Exec(%s, %s)", container, strings.Join(args, " "))
 }

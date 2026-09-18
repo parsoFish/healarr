@@ -1,6 +1,8 @@
 // Package config loads healarr's TOML configuration and secrets.
 package config
 
+import "time"
+
 // Node identifies which host this agent runs on.
 type Node string
 
@@ -70,6 +72,41 @@ type Mount struct {
 	ContainerPath string `toml:"container_path"`
 }
 
+// PlexLibrary maps a Plex library title to the host directory its files live in.
+type PlexLibrary struct {
+	Title string `toml:"title"`
+	Path  string `toml:"path"`
+}
+
+// Checks holds every threshold the check catalogue reads. Durations are
+// TOML strings ("24h", "30m"); BurntSushi/toml decodes them.
+type Checks struct {
+	Timeout                   time.Duration `toml:"timeout"`    // per-check timeout
+	DiskPaths                 []string      `toml:"disk_paths"` // filesystems to watch for pressure
+	DiskWarnPercent           float64       `toml:"disk_warn_percent"`
+	DiskCritPercent           float64       `toml:"disk_crit_percent"`
+	QueueStuckAfter           time.Duration `toml:"queue_stuck_after"`
+	QBitStalledAfter          time.Duration `toml:"qbit_stalled_after"`
+	CompletedNotImportedAfter time.Duration `toml:"completed_not_imported_after"`
+	ArrHistoryWindow          time.Duration `toml:"arr_history_window"`
+	WrongFileExts             []string      `toml:"wrong_file_exts"`
+	TVCategories              []string      `toml:"tv_categories"` // qBit categories where .iso is also wrong
+	DownloadsDirs             []string      `toml:"downloads_dirs"`
+	OrphanAfter               time.Duration `toml:"orphan_after"`
+	RecycleDirs               []string      `toml:"recycle_dirs"`
+	RecycleWarnGB             float64       `toml:"recycle_warn_gb"`
+	ImageBloatWarnGB          float64       `toml:"image_bloat_warn_gb"`
+	LogDirs                   []string      `toml:"log_dirs"`
+	LogWarnGB                 float64       `toml:"log_warn_gb"`
+	WantedSpikePercent        float64       `toml:"wanted_spike_percent"`
+	WantedSpikeMin            int           `toml:"wanted_spike_min"`
+	IndexerFailureWindow      time.Duration `toml:"indexer_failure_window"`
+	OverseerrStuckAfter       time.Duration `toml:"overseerr_stuck_after"`
+	PlexScanStaleAfter        time.Duration `toml:"plex_scan_stale_after"`
+	PlexLibraries             []PlexLibrary `toml:"plex_libraries"`
+	SeededMinAge              time.Duration `toml:"seeded_min_age"`
+}
+
 // Config is the full non-secret configuration for one node.
 type Config struct {
 	Node     Node     `toml:"node"`
@@ -81,6 +118,7 @@ type Config struct {
 	State    State    `toml:"state"`
 	Docker   Docker   `toml:"docker"`
 	Mounts   []Mount  `toml:"mounts"`
+	Checks   Checks   `toml:"checks"`
 }
 
 // Secrets is everything that must never be logged or committed.

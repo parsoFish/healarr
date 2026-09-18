@@ -57,3 +57,57 @@ container_path = "/downloads"
 host = "/mnt/nas/movies"
 container = "radarr"
 container_path = "/movies"
+
+# [checks]
+# # per-check timeout; a check that runs past this is reported as failed
+# timeout = "60s"
+#
+# # filesystems to watch for disk pressure
+# disk_paths = ["/volume1"]
+# disk_warn_percent = 85
+# disk_crit_percent = 92
+#
+# # a *arr queue item stuck in the same state this long is flagged
+# queue_stuck_after = "24h"
+# # a qBittorrent torrent with zero progress for this long is flagged stalled
+# qbit_stalled_after = "1h"
+# # a completed download not imported into its *arr library after this long is flagged
+# completed_not_imported_after = "30m"
+# # how far back to look through *arr history when correlating events
+# arr_history_window = "168h"
+#
+# # file extensions that should never appear in a finished download
+# wrong_file_exts = [".exe", ".scr", ".bat", ".lnk", ".msi"]
+# # qBittorrent categories where .iso is also treated as a wrong file extension
+# tv_categories = ["tv"]
+# downloads_dirs = ["/volume1/downloads/tv", "/volume1/downloads/movies"]
+#
+# # a file in a downloads dir with no matching *arr record after this long is an orphan
+# orphan_after = "168h"
+# recycle_dirs = ["/volume1/#recycle", "/volume1/downloads/#recycle"]
+# recycle_warn_gb = 20
+#
+# # Docker reclaimable image size above which image bloat is flagged
+# image_bloat_warn_gb = 2
+#
+# log_dirs = ["/var/log"]
+# log_warn_gb = 1
+#
+# # a sudden jump in a *arr's "wanted" count above this percent (and this many
+# # items) is flagged as a possible indexer or import failure
+# wanted_spike_percent = 20
+# wanted_spike_min = 10
+# # window over which indexer failures are counted
+# indexer_failure_window = "24h"
+#
+# # an Overseerr request stuck pending this long is flagged
+# overseerr_stuck_after = "168h"
+# # a Plex library scan that hasn't completed after this long is flagged stale
+# plex_scan_stale_after = "2h"
+# plex_libraries = [
+#   { title = "TV Shows", path = "/volume1/tv" },
+#   { title = "Movies", path = "/volume1/movies" },
+# ]
+#
+# # a torrent seeded for less than this age is exempt from removal checks
+# seeded_min_age = "24h"

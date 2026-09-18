@@ -52,6 +52,21 @@ func TestFakeRecordsAllCallsAndPropagatesErr(t *testing.T) {
 	}
 }
 
+func TestFakeExecOutByCmd(t *testing.T) {
+	f := &Fake{
+		ExecOut:      map[string]string{"sonarr": "default-out"},
+		ExecOutByCmd: map[string]string{"sonarr ping -c 1": "pong-specific"},
+	}
+	ctx := context.Background()
+
+	if out, err := f.Exec(ctx, "sonarr", "ping", "-c", "1"); err != nil || out != "pong-specific" {
+		t.Errorf("Exec with matching per-command key = %q, %v, want %q, nil", out, err, "pong-specific")
+	}
+	if out, err := f.Exec(ctx, "sonarr", "other", "args"); err != nil || out != "default-out" {
+		t.Errorf("Exec falling back to ExecOut = %q, %v, want %q, nil", out, err, "default-out")
+	}
+}
+
 func TestFakeReturnsConfiguredData(t *testing.T) {
 	f := &Fake{
 		List:       []Container{{Name: "sonarr"}},
