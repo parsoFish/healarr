@@ -2,15 +2,28 @@ package config
 
 import "time"
 
+// defaultPeerMessageRetention is how long peer_messages rows are kept
+// before the nightly prune removes them: 30 days, long enough to explain
+// any digest the operator is still looking at and short enough that the
+// table (one row per heartbeat in each direction) stays small on the Pi's
+// SD card.
+const defaultPeerMessageRetention = 30 * 24 * time.Hour
+
 // Defaults returns the baseline configuration; Load overlays the file on it.
 func Defaults() Config {
 	return Config{
 		Peer:   Peer{ListenAddr: "0.0.0.0:8090"},
 		Web:    Web{ListenAddr: "0.0.0.0:8091", BasePath: "/healarr"},
-		Email:  Email{MsmtpPath: "/usr/bin/msmtp"},
+		Email:  Email{MsmtpPath: "/usr/bin/msmtp", DigestAt: "07:00"},
 		LLM:    LLM{Enabled: true, Model: "claude-haiku-4-5-20251001", DailyBudgetUSD: 1.0},
 		State:  State{DBPath: "/var/lib/healarr/state.db"},
 		Docker: Docker{Socket: "/var/run/docker.sock", Binary: "docker"},
+		Agent: Agent{
+			HeartbeatInterval:    5 * time.Minute,
+			CheckpointAt:         "03:00",
+			PeerStaleAfter:       15 * time.Minute,
+			PeerMessageRetention: defaultPeerMessageRetention,
+		},
 		Checks: Checks{
 			Timeout:                   60 * time.Second,
 			DiskPaths:                 []string{"/"},

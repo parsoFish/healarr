@@ -6,7 +6,9 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/parsoFish/healarr/internal/agent"
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/sonarr"
@@ -14,9 +16,31 @@ import (
 	"github.com/parsoFish/healarr/internal/store"
 )
 
-// FakeStore is an in-memory StoreAPI for tests: it records every SaveReport
-// call and returns canned data for LatestReport/OpenFindings without
-// touching disk. Opened is set by the test's OpenStore closure (never by
+// storePeerMsgCall is one SavePeerMessage invocation FakeStore recorded.
+type storePeerMsgCall struct {
+	Direction, Kind string
+	Peer            config.Node
+	Payload         []byte
+	At              time.Time
+}
+
+// storeEnqueuedEmail is one EnqueueEmail invocation FakeStore recorded.
+type storeEnqueuedEmail struct {
+	To, Subject, Body string
+	At                time.Time
+}
+
+// storeFailedEmailCall is one MarkEmailFailed invocation FakeStore recorded.
+type storeFailedEmailCall struct {
+	ID    int64
+	At    time.Time
+	Cause error
+}
+
+// FakeStore is an in-memory StoreAPI (and, since Phase 3, AgentStoreCloser)
+// for tests: it records every call and returns canned data without
+// touching disk, mirroring how *store.Store satisfies both interfaces.
+// Opened is set by the test's OpenStore/OpenAgentStore closure (never by
 // FakeStore itself) so a test can assert the store was never opened.
 type FakeStore struct {
 	Opened bool
@@ -34,9 +58,37 @@ type FakeStore struct {
 	FindingsErr error
 
 	CloseErr error
+
+	// Phase 3 (agent.Store) additions.
+	PeerMessages       []storePeerMsgCall
+	SavePeerMessageErr error
+	nextMsgID          int64
+
+	LastPeerAt    time.Time
+	LastPeerFound bool
+	LastPeerErr   error
+
+	Emails      []storeEnqueuedEmail
+	EnqueueErr  error
+	nextEmailID int64
+
+	SentEmailIDs []int64
+	MarkSentErr  error
+
+	FailedEmails  []storeFailedEmailCall
+	MarkFailedErr error
+
+	CheckpointCalls int
+	CheckpointErr   error
+
+	PrunedBefore     []time.Time
+	PrunedDeleted    int64
+	PrunePeerMsgsErr error
 }
 
 var _ StoreAPI = (*FakeStore)(nil)
+var _ agent.Store = (*FakeStore)(nil)
+var _ AgentStoreCloser = (*FakeStore)(nil)
 
 func (f *FakeStore) SaveReport(_ context.Context, rep check.Report) (int64, store.UpsertSummary, error) {
 	if f.SaveErr != nil {
@@ -57,6 +109,63 @@ func (f *FakeStore) OpenFindings(context.Context, config.Node) ([]store.StoredFi
 func (f *FakeStore) Close() error {
 	f.Closed = true
 	return f.CloseErr
+}
+
+// SavePeerMessage records the call and returns an auto-incrementing id
+// (starting at 1, like a real sqlite rowid) unless SavePeerMessageErr is
+// set.
+func (f *FakeStore) SavePeerMessage(_ context.Context, direction, kind string, peer config.Node, payload []byte, at time.Time) (int64, error) {
+	f.PeerMessages = append(f.PeerMessages, storePeerMsgCall{Direction: direction, Kind: kind, Peer: peer, Payload: payload, At: at})
+	if f.SavePeerMessageErr != nil {
+		return 0, f.SavePeerMessageErr
+	}
+	f.nextMsgID++
+	return f.nextMsgID, nil
+}
+
+// LastPeerMessageAt returns the canned LastPeerAt/LastPeerFound/LastPeerErr.
+func (f *FakeStore) LastPeerMessageAt(_ context.Context, _ config.Node, _ string) (time.Time, bool, error) {
+	if f.LastPeerErr != nil {
+		return time.Time{}, false, f.LastPeerErr
+	}
+	return f.LastPeerAt, f.LastPeerFound, nil
+}
+
+// EnqueueEmail records the call and returns an auto-incrementing id
+// (starting at 1) unless EnqueueErr is set.
+func (f *FakeStore) EnqueueEmail(_ context.Context, to, subject, body string, at time.Time) (int64, error) {
+	if f.EnqueueErr != nil {
+		return 0, f.EnqueueErr
+	}
+	f.nextEmailID++
+	f.Emails = append(f.Emails, storeEnqueuedEmail{To: to, Subject: subject, Body: body, At: at})
+	return f.nextEmailID, nil
+}
+
+// MarkEmailSent records id and returns MarkSentErr.
+func (f *FakeStore) MarkEmailSent(_ context.Context, id int64, _ time.Time) error {
+	f.SentEmailIDs = append(f.SentEmailIDs, id)
+	return f.MarkSentErr
+}
+
+// MarkEmailFailed records the call and returns MarkFailedErr.
+func (f *FakeStore) MarkEmailFailed(_ context.Context, id int64, at time.Time, cause error) error {
+	f.FailedEmails = append(f.FailedEmails, storeFailedEmailCall{ID: id, At: at, Cause: cause})
+	return f.MarkFailedErr
+}
+
+// Checkpoint counts the call and returns CheckpointErr.
+func (f *FakeStore) PrunePeerMessages(_ context.Context, olderThan time.Time) (int64, error) {
+	f.PrunedBefore = append(f.PrunedBefore, olderThan)
+	if f.PrunePeerMsgsErr != nil {
+		return 0, f.PrunePeerMsgsErr
+	}
+	return f.PrunedDeleted, nil
+}
+
+func (f *FakeStore) Checkpoint(context.Context) error {
+	f.CheckpointCalls++
+	return f.CheckpointErr
 }
 
 func TestCheckListShowsEveryRegisteredCheck(t *testing.T) {

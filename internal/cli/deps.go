@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/parsoFish/healarr/internal/agent"
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/docker"
@@ -19,6 +20,8 @@ import (
 	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/notify"
+	"github.com/parsoFish/healarr/internal/peer"
 )
 
 // Deps carries every external dependency the CLI verbs need: a config
@@ -45,6 +48,24 @@ type Deps struct {
 	// defaultOpenStore, which wraps store.Open(ctx, cfg.State.DBPath).
 	// Never called on --dry-run.
 	OpenStore func(ctx context.Context, cfg config.Config) (StoreAPI, error)
+
+	// PeerClient builds this node's peer.Client. Nil falls back to
+	// defaultPeerClient, which returns (nil, nil) when cfg.Peer.PeerURL is
+	// empty — no peer configured, nothing to push/heartbeat/ping.
+	PeerClient func(cfg config.Config, sec config.Secrets) (peer.Client, error)
+	// Sender builds this node's notify.Sender. Nil falls back to
+	// defaultSender, which returns nil on the NAS node or when
+	// cfg.Email.To is empty (only the Pi with a recipient configured ever
+	// sends mail; constraints.md).
+	Sender func(cfg config.Config) notify.Sender
+	// OpenAgentStore opens the node's state store for `agent serve` and
+	// `notify test`, as the wider AgentStoreCloser surface agent.Options.Store
+	// needs — StoreAPI is deliberately too narrow for it (no
+	// SavePeerMessage/EnqueueEmail/Checkpoint). Nil falls back to
+	// defaultOpenAgentStore. Never called on --dry-run.
+	OpenAgentStore func(ctx context.Context, cfg config.Config) (AgentStoreCloser, error)
+	// NewAgent builds the daemon from Options. Nil falls back to agent.New.
+	NewAgent func(o agent.Options) (*agent.Agent, error)
 }
 
 // DefaultDeps wires the real constructors, reading service URLs and
@@ -79,8 +100,12 @@ func DefaultDeps() *Deps {
 		Host: func(config.Config, config.Secrets) (hostfs.Client, error) {
 			return hostfs.New(""), nil
 		},
-		Registry:  checks.Registry,
-		OpenStore: defaultOpenStore,
+		Registry:       checks.Registry,
+		OpenStore:      defaultOpenStore,
+		PeerClient:     defaultPeerClient,
+		Sender:         defaultSender,
+		OpenAgentStore: defaultOpenAgentStore,
+		NewAgent:       agent.New,
 	}
 }
 

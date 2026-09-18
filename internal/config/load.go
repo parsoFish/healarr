@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -125,7 +126,55 @@ func validate(cfg Config) error {
 	if err := validateNode(cfg.Node); err != nil {
 		return err
 	}
-	return validateChecks(cfg.Checks)
+	if err := validateChecks(cfg.Checks); err != nil {
+		return err
+	}
+	if err := validateAgent(cfg.Agent); err != nil {
+		return err
+	}
+	return validateEmailDigestAt(cfg.Email.DigestAt)
+}
+
+// hhmmPattern matches a local time-of-day in 24h "HH:MM" form, shared by
+// agent.checkpoint_at and email.digest_at.
+var hhmmPattern = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+// validateAgent rejects [agent] values the daemon's scheduler could not
+// act on: an unloadable timezone or malformed checkpoint_at would only
+// surface at the first missed run, a non-positive heartbeat_interval
+// would mean the ticker never fires, a non-positive peer_stale_after
+// would make every peer heartbeat look stale immediately (zero) or never
+// stale at all (negative), and a non-positive peer_message_retention would
+// have the nightly prune delete the whole peer_messages log.
+func validateAgent(a Agent) error {
+	if a.Timezone != "" {
+		if _, err := time.LoadLocation(a.Timezone); err != nil {
+			return fmt.Errorf("config: agent.timezone %q is not a valid IANA timezone: %w", a.Timezone, err)
+		}
+	}
+	if a.HeartbeatInterval <= 0 {
+		return fmt.Errorf("config: agent.heartbeat_interval must be > 0 (got %s)", a.HeartbeatInterval)
+	}
+	if !hhmmPattern.MatchString(a.CheckpointAt) {
+		return fmt.Errorf("config: agent.checkpoint_at must be \"HH:MM\" (got %q)", a.CheckpointAt)
+	}
+	if a.PeerStaleAfter <= 0 {
+		return fmt.Errorf("config: agent.peer_stale_after must be > 0 (got %s)", a.PeerStaleAfter)
+	}
+	if a.PeerMessageRetention <= 0 {
+		return fmt.Errorf("config: agent.peer_message_retention must be > 0 (got %s)", a.PeerMessageRetention)
+	}
+	return nil
+}
+
+// validateEmailDigestAt rejects an email.digest_at that isn't a "HH:MM"
+// local time, so a typo is caught at load time rather than at 07:00 when
+// the digest silently never fires.
+func validateEmailDigestAt(digestAt string) error {
+	if !hhmmPattern.MatchString(digestAt) {
+		return fmt.Errorf("config: email.digest_at must be \"HH:MM\" (got %q)", digestAt)
+	}
+	return nil
 }
 
 func validateNode(node Node) error {

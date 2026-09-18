@@ -14,7 +14,7 @@ Ships as a single Go binary — `internal/cli` for the uniform `healarr <service
 |---|---|---|
 | **1** — CLI + clients | Uniform CLI, 9 service clients, fixtures, cross-compile CI | ✅ |
 | **2** — Checks + store + report | 21-check registry, SQLite store with dedup/resolve, `check run`/`report generate` verbs | ✅ |
-| **3** — Daemon + peer + digest | Cron daemon, Pi↔NAS peer channel, first real digest email | ⏳ |
+| **3** — Daemon + peer + digest | Cron daemon, Pi↔NAS peer channel, first real digest email | ✅ |
 | **4** — Web UI + decisions | `/healarr/` dashboard/decisions page, cleanups, staleness scoring | ⏳ |
 | **5** — LLM digest | Haiku 4.5 digest narrative, budget/cost log, `--no-llm` fallback | ⏳ |
 
@@ -82,9 +82,18 @@ healarr check run --id disk_pressure_pi_sd
 
 # Render the digest from the store's open findings
 healarr report generate
+
+# Run the daemon in the foreground until SIGINT/SIGTERM (observe-only in Phase 3; --dry-run is refused)
+healarr agent serve
+
+# Send one test email through this node's configured sender, without waiting for the daily digest
+healarr notify test --to you@example.com
+
+# Heartbeat the peer and report its latest pushed report (always exits 0; it's a diagnostic)
+healarr peer ping --json
 ```
 
-Run `healarr --help` or `healarr <service> --help` for the full verb list per service. See [docs/runbook.md](docs/runbook.md)'s "Running checks by hand" section for the full check catalogue, `--dry-run` semantics, and how findings dedupe/resolve.
+Run `healarr --help` or `healarr <service> --help` for the full verb list per service. See [docs/runbook.md](docs/runbook.md)'s "Daemon operations" section for `agent serve`/`notify test`/`peer ping` and the cron schedule, and "Running checks by hand" for the full check catalogue, `--dry-run` semantics, and how findings dedupe/resolve.
 
 ## Documentation
 

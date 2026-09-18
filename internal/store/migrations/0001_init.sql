@@ -21,6 +21,7 @@ CREATE TABLE decisions (id INTEGER PRIMARY KEY, entity_key TEXT NOT NULL, kind T
   snooze_until TEXT, requested_at TEXT NOT NULL, executed_at TEXT, error TEXT NOT NULL DEFAULT '');
 CREATE TABLE peer_messages (id INTEGER PRIMARY KEY, direction TEXT NOT NULL, kind TEXT NOT NULL, peer TEXT NOT NULL,
   payload TEXT NOT NULL, received_at TEXT NOT NULL);
+CREATE INDEX peer_messages_lookup ON peer_messages (peer, kind, direction, received_at DESC);
 CREATE TABLE staleness_scores (entity_key TEXT PRIMARY KEY, score REAL NOT NULL, components TEXT NOT NULL,
   computed_at TEXT NOT NULL);
 CREATE TABLE llm_calls (id INTEGER PRIMARY KEY, called_at TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL,

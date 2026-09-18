@@ -123,6 +123,25 @@ Dropped from the Python design: `observations` (raw per-poll snapshots — too m
 
 Outbound email via msmtp only (ADR-004 unchanged) — reuses the host's existing `~/.msmtprc`, zero new SMTP creds. No inbound channel: approvals happen on the web page (ADR-014), not by replying to mail. The daily digest email links into `/healarr/` for anything that needs a decision.
 
+### Daemon (`internal/agent/`)
+
+Both nodes run one long-running process, `healarr agent serve`, wired to this node's own check registry, store, and — on the Pi only — a mail sender. `Run` starts the peer HTTP server (when `peer.listen_addr` is configured), builds the cron scheduler, runs one check cycle immediately (so a restart isn't stale for up to 5 minutes), then blocks until SIGINT/SIGTERM or the peer server fails to bind. Shutdown is graceful: the scheduler waits for any in-flight job, and the peer server waits up to 5s for in-flight requests before its listener closes. The daemon is **observe-only** in Phase 3 — every job persists a report, a peer message, or a digest, but nothing it does blocks, deletes, or otherwise remediates anything; Phase 4 adds the executor.
+
+The scheduler (`schedule.go`) registers five kinds of job, every one wrapped with `cron.Recover` (a panicking job is logged, never fatal) and `cron.SkipIfStillRunning` (an overlapping run is skipped and logged, never queued):
+
+| Job | Cadence |
+|---|---|
+| 5-minute / 15-minute / hourly / daily check cycles | fixed cron specs — `*/5`, `*/15`, hourly, and `10 0 * * *` (00:10 local) for daily |
+| Heartbeat | `agent.heartbeat_interval` (default `5m`), only when this node has a peer configured |
+| Daily digest | `email.digest_at` (default `07:00` local), Pi only |
+| Nightly WAL checkpoint | `agent.checkpoint_at` (default `03:00` local), both nodes |
+
+00:10/03:00/07:00 are staggered on purpose: the daily checks land before the checkpoint, and the checkpoint lands before the digest that reports on them.
+
+Peer traffic (`internal/peer/`) is four bearer-token-authenticated HTTP routes: `POST /v1/report` (the NAS pushes every cycle's report to the Pi), `GET /v1/report/latest` (pull-on-demand, and what `peer ping` calls), `POST /v1/heartbeat`, and `POST /v1/decision` (recorded only in Phase 3, per ADR-006 — nothing executes on it until Phase 4). The client retries a transport error or 5xx twice with 500ms→1s backoff before surfacing `ErrPeerUnavailable`; the server caps every body at 4 MiB and sets explicit read/write/idle timeouts so a slow or hostile peer can never hold a connection open indefinitely. ADR-018 covers the push-based reconciliation model this rests on.
+
+The daily digest (`agent.SendDigest`, rendered by `internal/notify/`) merges this node's own latest report and open findings with the peer's contribution — built entirely from what the peer has already **pushed** into this node's own store (`peer_messages`/`findings` under the peer's node), never a read-time pull. An unreachable or silent peer never blocks the digest: it renders "peer stale since …" (last pushed report older than `agent.peer_stale_after`, default `15m`) or "no report received" (nothing pushed, ever) in place of that section instead.
+
 ### Decisions (`internal/web/`, `internal/decision/`)
 
 The `/healarr/` page (Pi, LAN-only, behind the existing simplarr nginx) replaces the old email-reply approval flow (ADR-014). It shows the latest reconciled digest, both nodes' heartbeats, pending Correct-tier actions, and staleness candidates (ADR-016). A keep/delete/approve/reject click writes a `decisions` row; delete routes through Sonarr/Radarr's delete-with-files endpoint so *arr state and disk stay consistent, and notifies the peer if the file lives on the other node.
@@ -131,7 +150,7 @@ The `/healarr/` page (Pi, LAN-only, behind the existing simplarr nginx) replaces
 
 - **LLM cost**: one Haiku 4.5 call per day for the digest narrative (not per-event as in the original agentic design) — `daily_budget_usd` in config caps spend; a failed or over-budget call falls back to a templated digest, never blocks the email.
 - **Dry-run mode**: global `--dry-run` flag (and per-check promotion from dry-run to live) — Correct-tier cleanups ship dry-run first and are promoted once trusted (Phase 4).
-- **Peer resilience**: unreachable peer never blocks the digest — it just reports "peer stale since …" (ADR-015).
+- **Peer resilience**: unreachable peer never blocks the digest — it just reports "peer stale since …" (ADR-015; push-based reconciliation mechanics in ADR-018).
 - **Escalate tier**: the agent never auto-deletes library media; staleness candidates always require a human decision (ADR-016).
 
 ## Phasing
@@ -152,12 +171,14 @@ Go rewrite (ADR-013..016) replaces the earlier Python-era phase plan below. Each
 - Check registry + all 21 checks from the C5 catalogue (every row except `staleness_scan`, which is Phase 4) as pure functions with table tests
 - `healarr check list [--json]`, `healarr check run (--all | --id <id>) [--dry-run] [--json]`, `healarr report generate [--dry-run] [--json]`
 
-### Phase 3 — Daemon + peer + digest email
+### Phase 3 — Daemon + peer + digest email ✅
 
-- `cron`-scheduled daemon (`healarr agent serve`)
-- Peer HTTP server/client (ADR-015), report reconciliation
-- msmtp notifier, `deploy/` systemd + DSM units installed on both nodes
-- First real daily digest email
+- `cron`-scheduled daemon (`healarr agent serve`): four fixed check-cycle cadences, a heartbeat, a daily digest (Pi only), and a nightly WAL checkpoint — exact specs under "Daemon" above
+- Peer HTTP server/client (ADR-015), push-based report reconciliation on the Pi's own store (ADR-018)
+- msmtp notifier (`internal/notify/`) wired into the daemon; `deploy/systemd/healarr.service` (Pi) and `deploy/dsm/healarr-boot.sh` (NAS) installed and verified on both nodes
+- `healarr agent serve` (the daemon), `healarr notify test`, `healarr peer ping` (diagnostics) CLI verbs
+- First real daily digest email, merging both nodes' findings
+- Observe-only throughout (ADR-018): decisions are recorded, never executed, until Phase 4
 
 ### Phase 4 — Web UI + decisions + cleanups + staleness
 

@@ -40,3 +40,39 @@ Skipped (not configured): {{.SkippedList}}
 {{if .BaseURL}}
 Decisions: {{.BaseURL}}/decisions
 {{end -}}
+
+PEER ({{.Peer.Node}})
+{{if .Peer.Unavailable}}
+peer {{.Peer.Node}}: no report received
+{{else if .Peer.Stale}}
+peer {{.Peer.Node}} stale since {{.Peer.StaleSince}}
+{{else}}
+Peer summary: {{.Peer.ChecksRun}} checks run, {{.Peer.ChecksFailed}} failed, {{.Peer.FindingsCount}} open findings ({{.Peer.CriticalCount}} critical, {{.Peer.WarnCount}} warn, {{.Peer.InfoCount}} info)
+{{if not .Peer.HasFindings}}
+No open findings.
+{{end -}}
+{{if .Peer.Critical}}
+CRITICAL
+{{range .Peer.Critical -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{if .Peer.Warn}}
+WARN
+{{range .Peer.Warn -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{if .Peer.Info}}
+INFO
+{{range .Peer.Info -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{end -}}
