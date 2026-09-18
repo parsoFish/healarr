@@ -32,6 +32,7 @@ base_path = "/healarr"
 to = "you@example.com"
 from = "healarr@example.com"
 msmtp_path = "/usr/bin/msmtp"
+digest_at = "07:00"                # local time-of-day the daily digest email is sent, "HH:MM"
 
 [llm]
 enabled = true
@@ -57,6 +58,18 @@ container_path = "/downloads"
 host = "/mnt/nas/movies"
 container = "radarr"
 container_path = "/movies"
+
+# [agent]
+# # IANA timezone name for daemon schedules (checkpoint_at, digest_at); ""
+# # (default) uses the host's local timezone
+# timezone = ""
+# # how often the daemon writes its own heartbeat and checks its peer's
+# heartbeat_interval = "5m"
+# # local time-of-day the daily checkpoint run starts, "HH:MM"
+# checkpoint_at = "03:00"
+# # a peer whose last heartbeat is older than this is treated as stale
+# # (3 missed heartbeats at the default heartbeat_interval)
+# peer_stale_after = "15m"
 
 # [checks]
 # # per-check timeout; a check that runs past this is reported as failed

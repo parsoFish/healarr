@@ -1,7 +1,10 @@
 // Package config loads healarr's TOML configuration and secrets.
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Node identifies which host this agent runs on.
 type Node string
@@ -45,6 +48,15 @@ type Email struct {
 	To        string `toml:"to"`
 	From      string `toml:"from"`
 	MsmtpPath string `toml:"msmtp_path"`
+	DigestAt  string `toml:"digest_at"` // "HH:MM" local, default "07:00"
+}
+
+// Agent configures the daemon's schedules.
+type Agent struct {
+	Timezone          string        `toml:"timezone"`           // IANA name; "" = time.Local
+	HeartbeatInterval time.Duration `toml:"heartbeat_interval"` // default 5m
+	CheckpointAt      string        `toml:"checkpoint_at"`      // "HH:MM" local, default "03:00"
+	PeerStaleAfter    time.Duration `toml:"peer_stale_after"`   // default 15m (3 missed heartbeats)
 }
 
 // LLM configures the daily digest model call.
@@ -119,6 +131,23 @@ type Config struct {
 	Docker   Docker   `toml:"docker"`
 	Mounts   []Mount  `toml:"mounts"`
 	Checks   Checks   `toml:"checks"`
+	Agent    Agent    `toml:"agent"`
+}
+
+// Location resolves the timezone the daemon's schedules run in. An empty
+// Agent.Timezone defaults to the host's local zone, matching the doc
+// comment on Agent.Timezone; validate() has already proven a non-empty
+// value loads cleanly, but Location fails closed on its own rather than
+// trusting that call site.
+func (c Config) Location() (*time.Location, error) {
+	if c.Agent.Timezone == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(c.Agent.Timezone)
+	if err != nil {
+		return nil, fmt.Errorf("config: agent.timezone %q: %w", c.Agent.Timezone, err)
+	}
+	return loc, nil
 }
 
 // Secrets is everything that must never be logged or committed.
