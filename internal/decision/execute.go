@@ -18,7 +18,8 @@ import (
 // always allowed, even with actions disabled. "delete" removes the
 // entity from Sonarr/Radarr, best-effort declines matching Overseerr
 // requests and tells the peer which torrents to remove, gated behind
-// cfg.Actions.Enabled. It returns the decision as MarkDecision left it.
+// cfg.Actions.Enabled. Any other stored kind is a hard failure. It
+// returns the decision as MarkDecision left it.
 func Execute(ctx context.Context, d Deps, id int64) (store.Decision, error) {
 	dec, ok, err := d.Store.DecisionByID(ctx, id)
 	if err != nil {
@@ -34,7 +35,12 @@ func Execute(ctx context.Context, d Deps, id int64) (store.Decision, error) {
 	case KindDelete:
 		return executeDelete(ctx, d, dec)
 	default:
-		return store.Decision{}, fmt.Errorf("decision: execute %d: %w: %q", id, ErrUnknownKind, dec.Kind)
+		// An unknown kind is a hard failure, recorded exactly like the
+		// unknown-entity-key path inside executeDelete: failDelete both
+		// marks the decision failed and records a failed remediation
+		// row, so a malformed decision (e.g. one the future web UI might
+		// create) is never left silently pending.
+		return failDelete(ctx, d, dec, d.Now(), fmt.Errorf("%w: %q", ErrUnknownKind, dec.Kind))
 	}
 }
 

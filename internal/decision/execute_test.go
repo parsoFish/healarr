@@ -44,13 +44,24 @@ func TestExecuteReturnsNotFoundForUnknownID(t *testing.T) {
 	}
 }
 
-func TestExecuteReturnsErrUnknownKindForBadKind(t *testing.T) {
+// TestExecuteUnknownKindMarksFailedAndRecordsRemediation proves an
+// unknown kind (e.g. one a future web UI create-path might send
+// unvalidated) is a hard failure recorded exactly like the
+// unknown-entity-key path: MarkDecision(failed) plus a failed
+// remediations row, never left silently pending.
+func TestExecuteUnknownKindMarksFailedAndRecordsRemediation(t *testing.T) {
 	fs := &fakeDecisionStore{Decisions: map[int64]store.Decision{
 		1: {ID: 1, EntityKey: "sonarr:1", Kind: "frobnicate"},
 	}}
 	_, err := Execute(context.Background(), newTestDeps(fs), 1)
 	if !errors.Is(err, ErrUnknownKind) {
 		t.Fatalf("Execute err = %v, want ErrUnknownKind", err)
+	}
+	if len(fs.MarkCalls) != 1 || fs.MarkCalls[0].Status != "failed" || !errors.Is(fs.MarkCalls[0].Cause, ErrUnknownKind) {
+		t.Fatalf("MarkCalls = %+v, want one failed call wrapping ErrUnknownKind", fs.MarkCalls)
+	}
+	if len(fs.Remediations) != 1 || fs.Remediations[0].Status != "failed" {
+		t.Fatalf("Remediations = %+v, want one failed row", fs.Remediations)
 	}
 }
 

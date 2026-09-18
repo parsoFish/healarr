@@ -43,13 +43,14 @@ func executeDeleteSonarr(ctx context.Context, d Deps, dec store.Decision, ref en
 		return failDelete(ctx, d, dec, now, fmt.Errorf("%w: sonarr", check.ErrNotConfigured))
 	}
 
-	tvdbID, title := lookupSonarrSeries(ctx, d, ref.ID)
+	tvdbID, title, lookupNote := lookupSonarrSeries(ctx, d, ref.ID)
 
 	if err := d.Sonarr.DeleteSeries(ctx, ref.ID, true, true); err != nil {
 		return failDelete(ctx, d, dec, now, fmt.Errorf("delete series %d: %w", ref.ID, err))
 	}
 
 	parts := []string{fmt.Sprintf("deleted sonarr series %d (%s)", ref.ID, title)}
+	parts = append(parts, lookupNote...)
 	parts = append(parts, declineOverseerrRequests(ctx, d, "tv", tvdbID)...)
 	parts = append(parts, sendQbitDeleteHint(ctx, d, dec.EntityKey, sonarrDownloadHashes(ctx, d, ref.ID, now))...)
 
@@ -63,13 +64,14 @@ func executeDeleteRadarr(ctx context.Context, d Deps, dec store.Decision, ref en
 		return failDelete(ctx, d, dec, now, fmt.Errorf("%w: radarr", check.ErrNotConfigured))
 	}
 
-	tmdbID, title := lookupRadarrMovie(ctx, d, ref.ID)
+	tmdbID, title, lookupNote := lookupRadarrMovie(ctx, d, ref.ID)
 
 	if err := d.Radarr.DeleteMovie(ctx, ref.ID, true, true); err != nil {
 		return failDelete(ctx, d, dec, now, fmt.Errorf("delete movie %d: %w", ref.ID, err))
 	}
 
 	parts := []string{fmt.Sprintf("deleted radarr movie %d (%s)", ref.ID, title)}
+	parts = append(parts, lookupNote...)
 	parts = append(parts, declineOverseerrRequests(ctx, d, "movie", tmdbID)...)
 	parts = append(parts, sendQbitDeleteHint(ctx, d, dec.EntityKey, radarrDownloadHashes(ctx, d, ref.ID, now))...)
 
@@ -94,34 +96,36 @@ func finishDelete(ctx context.Context, d Deps, dec store.Decision, now time.Time
 // it is deleted (DeleteSeries removes it from Sonarr's own index, so
 // this must happen first). A lookup failure — or id simply not being
 // found — only means the Overseerr decline step below has nothing to
-// match on; it never blocks the delete itself.
-func lookupSonarrSeries(ctx context.Context, d Deps, id int64) (tvdbID int64, title string) {
+// match on; it never blocks the delete itself, but (like every other
+// best-effort step) the failure is still logged and returned as a note
+// for the remediation Detail, never silently dropped.
+func lookupSonarrSeries(ctx context.Context, d Deps, id int64) (tvdbID int64, title string, note []string) {
 	all, err := d.Sonarr.Series(ctx)
 	if err != nil {
 		slog.Default().Warn("decision: sonarr series lookup failed before delete", "id", id, "error", err)
-		return 0, ""
+		return 0, "", []string{fmt.Sprintf("sonarr lookup: %v", err)}
 	}
 	for _, s := range all {
 		if s.ID == id {
-			return s.TVDBID, s.Title
+			return s.TVDBID, s.Title, nil
 		}
 	}
-	return 0, ""
+	return 0, "", nil
 }
 
 // lookupRadarrMovie is lookupSonarrSeries's Radarr equivalent.
-func lookupRadarrMovie(ctx context.Context, d Deps, id int64) (tmdbID int64, title string) {
+func lookupRadarrMovie(ctx context.Context, d Deps, id int64) (tmdbID int64, title string, note []string) {
 	all, err := d.Radarr.Movies(ctx)
 	if err != nil {
 		slog.Default().Warn("decision: radarr movies lookup failed before delete", "id", id, "error", err)
-		return 0, ""
+		return 0, "", []string{fmt.Sprintf("radarr lookup: %v", err)}
 	}
 	for _, m := range all {
 		if m.ID == id {
-			return m.TMDBID, m.Title
+			return m.TMDBID, m.Title, nil
 		}
 	}
-	return 0, ""
+	return 0, "", nil
 }
 
 // declineOverseerrRequests best-effort declines every request matching

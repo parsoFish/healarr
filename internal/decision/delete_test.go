@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,30 @@ func (o *partialFailOverseerr) Requests(context.Context, string) ([]overseerr.Re
 func (o *partialFailOverseerr) DeclineRequest(_ context.Context, id int64) error {
 	o.declined = append(o.declined, id)
 	return o.declineErrFor[id]
+}
+
+// partialFailSonarr wraps a *sonarr.Fake, failing only Series() (the
+// pre-delete TVDB/title lookup) while every other method — including
+// DeleteSeries and History — behaves normally via the embedded Fake, so
+// a test can prove the delete itself still succeeds when only the
+// lookup fails.
+type partialFailSonarr struct {
+	*sonarr.Fake
+	seriesErr error
+}
+
+func (s *partialFailSonarr) Series(context.Context) ([]sonarr.Series, error) {
+	return nil, s.seriesErr
+}
+
+// partialFailRadarr is partialFailSonarr's Radarr equivalent.
+type partialFailRadarr struct {
+	*radarr.Fake
+	moviesErr error
+}
+
+func (r *partialFailRadarr) Movies(context.Context) ([]radarr.Movie, error) {
+	return nil, r.moviesErr
 }
 
 // newDeleteTestDeps builds a Deps for the delete branch: actions enabled,
@@ -222,6 +247,58 @@ func TestExecuteDeleteSonarrDeleteSeriesErrorFails(t *testing.T) {
 	}
 	if len(fs.Remediations) != 1 || fs.Remediations[0].Status != "failed" {
 		t.Fatalf("Remediations = %+v", fs.Remediations)
+	}
+}
+
+// TestExecuteDeleteSonarrLookupFailureIsRecordedButStillExecutes proves
+// that when the pre-delete Series() lookup fails (but DeleteSeries
+// itself succeeds), the failure is not just logged but also folded into
+// the remediation Detail — like every other best-effort step — and the
+// decision still executes.
+func TestExecuteDeleteSonarrLookupFailureIsRecordedButStillExecutes(t *testing.T) {
+	fs := &fakeDecisionStore{Decisions: map[int64]store.Decision{
+		1: {ID: 1, EntityKey: "sonarr:1", Kind: "delete"},
+	}}
+	sonarrFake := &partialFailSonarr{Fake: &sonarr.Fake{}, seriesErr: errors.New("sonarr lookup boom")}
+	deps := newDeleteTestDeps(fs, sonarrFake, nil, nil, nil)
+
+	dec, err := Execute(context.Background(), deps, 1)
+	if err != nil {
+		t.Fatalf("Execute: %v, want success (lookup failure is best effort)", err)
+	}
+	if dec.Status != "executed" {
+		t.Fatalf("dec.Status = %q, want executed", dec.Status)
+	}
+	if !slices.Contains(sonarrFake.Calls, "DeleteSeries(1,true,true)") {
+		t.Errorf("sonarr Calls = %v, want DeleteSeries(1,true,true) to have run", sonarrFake.Calls)
+	}
+	if len(fs.Remediations) != 1 || !strings.Contains(fs.Remediations[0].Detail, "sonarr lookup: sonarr lookup boom") {
+		t.Fatalf("Detail = %q, want it to mention the sonarr lookup failure", fs.Remediations[0].Detail)
+	}
+}
+
+// TestExecuteDeleteRadarrLookupFailureIsRecordedButStillExecutes is
+// TestExecuteDeleteSonarrLookupFailureIsRecordedButStillExecutes's
+// Radarr equivalent.
+func TestExecuteDeleteRadarrLookupFailureIsRecordedButStillExecutes(t *testing.T) {
+	fs := &fakeDecisionStore{Decisions: map[int64]store.Decision{
+		1: {ID: 1, EntityKey: "radarr:2", Kind: "delete"},
+	}}
+	radarrFake := &partialFailRadarr{Fake: &radarr.Fake{}, moviesErr: errors.New("radarr lookup boom")}
+	deps := newDeleteTestDeps(fs, nil, radarrFake, nil, nil)
+
+	dec, err := Execute(context.Background(), deps, 1)
+	if err != nil {
+		t.Fatalf("Execute: %v, want success (lookup failure is best effort)", err)
+	}
+	if dec.Status != "executed" {
+		t.Fatalf("dec.Status = %q, want executed", dec.Status)
+	}
+	if !slices.Contains(radarrFake.Calls, "DeleteMovie(2,true,true)") {
+		t.Errorf("radarr Calls = %v, want DeleteMovie(2,true,true) to have run", radarrFake.Calls)
+	}
+	if len(fs.Remediations) != 1 || !strings.Contains(fs.Remediations[0].Detail, "radarr lookup: radarr lookup boom") {
+		t.Fatalf("Detail = %q, want it to mention the radarr lookup failure", fs.Remediations[0].Detail)
 	}
 }
 
