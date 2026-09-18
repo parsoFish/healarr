@@ -47,29 +47,31 @@ var ErrInvalidOptions = errors.New("agent: invalid options")
 // peer configured never pushes or answers peer calls meaningfully, and
 // only the Pi ever sends mail (constraints.md).
 type Options struct {
-	Cfg      config.Config
-	Registry *check.Registry
-	Deps     func(ctx context.Context) (check.Deps, error) // builds clients per cycle (fresh Previous)
-	Store    Store
-	Peer     peer.Client   // nil => no push/heartbeat
-	Sender   notify.Sender // nil => no email (NAS)
-	Logger   *slog.Logger
-	Now      func() time.Time
-	Version  string
+	Cfg       config.Config
+	Registry  *check.Registry
+	Deps      func(ctx context.Context) (check.Deps, error) // builds clients per cycle (fresh Previous)
+	Store     Store
+	Peer      peer.Client   // nil => no push/heartbeat
+	Sender    notify.Sender // nil => no email (NAS)
+	Logger    *slog.Logger
+	Now       func() time.Time
+	Version   string
+	PeerToken string // from secrets; Run requires this when cfg.Peer.ListenAddr is set
 }
 
 // Agent runs check cycles for one node, pushes reports to its peer, and
 // answers the inbound calls the peer's daemon makes against this one.
 type Agent struct {
-	cfg      config.Config
-	registry *check.Registry
-	deps     func(ctx context.Context) (check.Deps, error)
-	store    Store
-	peer     peer.Client
-	sender   notify.Sender
-	logger   *slog.Logger
-	now      func() time.Time
-	version  string
+	cfg       config.Config
+	registry  *check.Registry
+	deps      func(ctx context.Context) (check.Deps, error)
+	store     Store
+	peer      peer.Client
+	sender    notify.Sender
+	logger    *slog.Logger
+	now       func() time.Time
+	version   string
+	peerToken string
 }
 
 // New validates o and returns an Agent. Logger defaults to slog.Default()
@@ -85,15 +87,16 @@ func New(o Options) (*Agent, error) {
 	}
 
 	return &Agent{
-		cfg:      o.Cfg,
-		registry: o.Registry,
-		deps:     o.Deps,
-		store:    o.Store,
-		peer:     o.Peer,
-		sender:   o.Sender,
-		logger:   logger,
-		now:      o.Now,
-		version:  o.Version,
+		cfg:       o.Cfg,
+		registry:  o.Registry,
+		deps:      o.Deps,
+		store:     o.Store,
+		peer:      o.Peer,
+		sender:    o.Sender,
+		logger:    logger,
+		now:       o.Now,
+		version:   o.Version,
+		peerToken: o.PeerToken,
 	}, nil
 }
 
