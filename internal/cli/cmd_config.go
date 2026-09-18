@@ -44,6 +44,10 @@ func printValidation(cmd *cobra.Command, flags *GlobalFlags, cfg config.Config, 
 	w := cmd.OutOrStdout()
 	lines := []string{
 		fmt.Sprintf("node: %s", cfg.Node),
+		fmt.Sprintf("actions_enabled: %v", cfg.Actions.Enabled),
+		fmt.Sprintf("cleanup_dry_run: %v", cfg.Cleanup.DryRun),
+		fmt.Sprintf("staleness_candidate_threshold: %v", cfg.Staleness.CandidateThreshold),
+		fmt.Sprintf("staleness_watchlist_threshold: %v", cfg.Staleness.WatchlistThreshold),
 		fmt.Sprintf("sonarr_url: %s", cfg.Services.Sonarr.URL),
 		fmt.Sprintf("radarr_url: %s", cfg.Services.Radarr.URL),
 		fmt.Sprintf("prowlarr_url: %s", cfg.Services.Prowlarr.URL),
@@ -73,7 +77,11 @@ func printValidation(cmd *cobra.Command, flags *GlobalFlags, cfg config.Config, 
 
 func validationReport(cfg config.Config, sec config.Secrets) map[string]any {
 	return map[string]any{
-		"node": string(cfg.Node),
+		"node":                          string(cfg.Node),
+		"actions_enabled":               cfg.Actions.Enabled,
+		"cleanup_dry_run":               cfg.Cleanup.DryRun,
+		"staleness_candidate_threshold": cfg.Staleness.CandidateThreshold,
+		"staleness_watchlist_threshold": cfg.Staleness.WatchlistThreshold,
 		"service_urls": map[string]string{
 			"sonarr":      cfg.Services.Sonarr.URL,
 			"radarr":      cfg.Services.Radarr.URL,

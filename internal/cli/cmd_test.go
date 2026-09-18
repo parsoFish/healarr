@@ -309,6 +309,18 @@ func TestConfigValidate(t *testing.T) {
 	if !strings.Contains(out, "node: pi") {
 		t.Errorf("missing node line: %q", out)
 	}
+	if !strings.Contains(out, "actions_enabled: false") {
+		t.Errorf("missing actions_enabled line: %q", out)
+	}
+	if !strings.Contains(out, "cleanup_dry_run: true") {
+		t.Errorf("missing cleanup_dry_run line: %q", out)
+	}
+	if !strings.Contains(out, "staleness_candidate_threshold: 70") {
+		t.Errorf("missing staleness_candidate_threshold line: %q", out)
+	}
+	if !strings.Contains(out, "staleness_watchlist_threshold: 50") {
+		t.Errorf("missing staleness_watchlist_threshold line: %q", out)
+	}
 	if !strings.Contains(out, "sonarr_api_key: set") {
 		t.Errorf("missing sonarr_api_key line: %q", out)
 	}
@@ -362,6 +374,18 @@ func TestConfigValidateJSON(t *testing.T) {
 	}
 	if got["node"] != "nas" {
 		t.Errorf("node = %v, want nas", got["node"])
+	}
+	if got["actions_enabled"] != false {
+		t.Errorf("actions_enabled = %v, want false", got["actions_enabled"])
+	}
+	if got["cleanup_dry_run"] != true {
+		t.Errorf("cleanup_dry_run = %v, want true", got["cleanup_dry_run"])
+	}
+	if got["staleness_candidate_threshold"] != float64(70) {
+		t.Errorf("staleness_candidate_threshold = %v, want 70", got["staleness_candidate_threshold"])
+	}
+	if got["staleness_watchlist_threshold"] != float64(50) {
+		t.Errorf("staleness_watchlist_threshold = %v, want 50", got["staleness_watchlist_threshold"])
 	}
 	apiKeys, ok := got["api_keys"].(map[string]any)
 	if !ok {
