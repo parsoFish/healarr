@@ -12,6 +12,14 @@ import (
 
 const wrongFileTypeID = "wrong_file_type"
 
+// inspectErrorsKey is the entity key of the single roll-up finding that
+// reports the torrents qBittorrent refused to describe this run, and
+// inspectErrorsMetric counts them.
+const (
+	inspectErrorsKey    = "qbit:" + wrongFileTypeID + ":inspect-errors"
+	inspectErrorsMetric = "qbit_wrong_file_inspect_errors"
+)
+
 // wrongFileTypeCheck flags torrents that contain a disallowed file type:
 // an executable, script or installer masquerading as media (the classic
 // "Show.S01E01.mkv.exe" fake release), or an ISO image sitting in a TV
@@ -36,17 +44,44 @@ func runWrongFileType(ctx context.Context, d check.Deps) (check.Result, error) {
 	}
 
 	var findings []check.Finding
+	var errored []string
+	var firstErr error
 	for _, t := range torrents {
 		files, err := d.QBit.Files(ctx, t.Hash)
 		if err != nil {
-			return check.Result{}, fmt.Errorf("qbit files %s: %w", t.Hash, err)
+			// One torrent qBittorrent cannot describe (a magnet whose
+			// metadata never arrived, a torrent removed mid-run) must not
+			// hide the fake releases in all the others. Record it and
+			// report the whole set once, below.
+			errored = append(errored, t.Hash)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
 		if f := wrongFileFinding(d, t, files); f != nil {
 			findings = append(findings, *f)
 		}
 	}
+
 	metrics := map[string]float64{"qbit_wrong_file_torrents": float64(len(findings))}
+	if len(errored) > 0 {
+		findings = append(findings, inspectErrorsFinding(d, errored, firstErr))
+		metrics[inspectErrorsMetric] = float64(len(errored))
+	}
 	return check.Result{Findings: findings, Metrics: metrics}, nil
+}
+
+// inspectErrorsFinding rolls every torrent whose file list could not be
+// read into one warn finding, so a flapping qBittorrent produces a single
+// line in the digest rather than one per torrent. It is observe-tier: the
+// remedy is to look at qBittorrent, not at any one torrent.
+func inspectErrorsFinding(d check.Deps, errored []string, firstErr error) check.Finding {
+	f := d.NewFinding(wrongFileTypeID, inspectErrorsKey, check.SeverityWarn, check.TierObserve,
+		fmt.Sprintf("%d torrent(s) could not be inspected", len(errored)))
+	f.Detail = fmt.Sprintf("qbit files %s: %s", errored[0], firstErr)
+	f.Data = map[string]any{"hashes": errored, "firstError": firstErr.Error()}
+	return f
 }
 
 // wrongFileFinding inspects every file in one torrent and, if any are
@@ -77,7 +112,7 @@ func isBadFile(name, category string, wrongExts, tvCategories []string) bool {
 	if extInList(ext, wrongExts) {
 		return true
 	}
-	return ext == ".iso" && stringInList(category, tvCategories)
+	return ext == ".iso" && categoryInList(category, tvCategories)
 }
 
 func extInList(ext string, exts []string) bool {
@@ -89,9 +124,12 @@ func extInList(ext string, exts []string) bool {
 	return false
 }
 
-func stringInList(s string, list []string) bool {
+// categoryInList reports whether category matches any entry in list,
+// ignoring case: a qBittorrent category is free text the user typed, so
+// "TV" and "tv" name the same category and must get the same rule.
+func categoryInList(category string, list []string) bool {
 	for _, v := range list {
-		if v == s {
+		if strings.EqualFold(v, category) {
 			return true
 		}
 	}

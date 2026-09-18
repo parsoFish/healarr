@@ -1,7 +1,9 @@
 package plex
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +27,15 @@ func TestPlexScanFreshness(t *testing.T) {
 	staleEntries := map[string][]hostfs.Entry{
 		"/volume1/tv": {{Name: "show.mkv", ModTime: scannedAt.Add(5 * time.Hour)}},
 	}
+	// A new episode lands in <Library>/<Show>/<Season NN>/, which bumps the
+	// season directory's mtime two levels below the library path.
+	seasonEntries := map[string][]hostfs.Entry{
+		"/volume1/tv":            {{Name: "Show", IsDir: true, ModTime: scannedAt.Add(-48 * time.Hour)}},
+		"/volume1/tv/Show":       {{Name: "Season 01", IsDir: true, ModTime: scannedAt.Add(5 * time.Hour)}},
+		"/volume1/tv/Show/Extra": {{Name: "never-read.mkv", ModTime: scannedAt.Add(100 * time.Hour)}},
+	}
 	libs := []plex.Library{{Key: "1", Title: "TV Shows", ScannedAt: scannedAt}}
+	neverScanned := []plex.Library{{Key: "1", Title: "TV Shows"}}
 
 	tests := []struct {
 		name    string
@@ -49,6 +59,25 @@ func TestPlexScanFreshness(t *testing.T) {
 			name: "stale",
 			deps: baseDeps(cfg, &plex.Fake{LibraryList: libs}, &hostfs.Fake{Entries: staleEntries}),
 			want: []wantFinding{{key: "plex:1", sev: check.SeverityWarn}},
+		},
+		{
+			// Two levels down, because that is where the season directory
+			// whose mtime moved actually lives.
+			name: "stale via season subdirectory",
+			deps: baseDeps(cfg, &plex.Fake{LibraryList: libs}, &hostfs.Fake{Entries: seasonEntries}),
+			want: []wantFinding{{key: "plex:1", sev: check.SeverityWarn}},
+		},
+		{
+			name: "never scanned",
+			deps: baseDeps(cfg, &plex.Fake{LibraryList: neverScanned}, &hostfs.Fake{Entries: freshEntries}),
+			want: []wantFinding{{key: "plex:1", sev: check.SeverityWarn}},
+		},
+		{
+			// An empty library directory says nothing about scan
+			// freshness: there is no file Plex could have missed.
+			name: "empty library directory",
+			deps: baseDeps(cfg, &plex.Fake{LibraryList: libs}, &hostfs.Fake{Entries: map[string][]hostfs.Entry{}}),
+			want: nil,
 		},
 		{
 			name:    "libraries error",
@@ -85,12 +114,69 @@ func TestPlexScanFreshness(t *testing.T) {
 				if got := res.Metrics["plex_scan_age_hours:1"]; got != 0.5 {
 					t.Fatalf("plex_scan_age_hours:1 = %v, want 0.5", got)
 				}
-			case "stale":
+			case "stale", "stale via season subdirectory":
 				want := "plex library TV Shows last scanned 2026-09-18T05:00:00Z but /volume1/tv changed 2026-09-18T10:00:00Z"
 				if got := res.Findings[0].Summary; got != want {
 					t.Fatalf("summary = %q, want %q", got, want)
 				}
+			case "never scanned":
+				want := "plex library TV Shows has never been scanned"
+				if got := res.Findings[0].Summary; got != want {
+					t.Fatalf("summary = %q, want %q", got, want)
+				}
+				if _, ok := res.Metrics["plex_scan_age_hours:1"]; ok {
+					t.Fatalf("a never-scanned library must not report an age metric: %v", res.Metrics)
+				}
+			case "empty library directory":
+				if _, ok := res.Metrics["plex_scan_age_hours:1"]; ok {
+					t.Fatalf("an empty library directory must not report an age metric: %v", res.Metrics)
+				}
 			}
 		})
+	}
+}
+
+// subdirFailHost delegates to an embedded *hostfs.Fake except for one
+// path's ListDir, which always fails. hostfs.Fake's single Err field fails
+// every call uniformly, so it can't express "the library dir lists, a
+// subdirectory does not" on its own.
+type subdirFailHost struct {
+	*hostfs.Fake
+	failPath string
+	err      error
+}
+
+func (h subdirFailHost) ListDir(ctx context.Context, path string) ([]hostfs.Entry, error) {
+	if path == h.failPath {
+		return nil, h.err
+	}
+	return h.Fake.ListDir(ctx, path)
+}
+
+// TestPlexScanFreshnessSubdirListDirError proves a subdirectory the check
+// cannot read fails the check loudly rather than being read as "nothing
+// changed down there".
+func TestPlexScanFreshnessSubdirListDirError(t *testing.T) {
+	c := Checks(config.Config{})[1]
+	cfg := config.Config{Checks: config.Checks{
+		PlexLibraries:      []config.PlexLibrary{{Title: "TV Shows", Path: "/volume1/tv"}},
+		PlexScanStaleAfter: 2 * time.Hour,
+	}}
+	scannedAt := time.Date(2026, 9, 18, 5, 0, 0, 0, time.UTC)
+	host := subdirFailHost{
+		Fake: &hostfs.Fake{Entries: map[string][]hostfs.Entry{
+			"/volume1/tv": {{Name: "Show", IsDir: true, ModTime: scannedAt}},
+		}},
+		failPath: "/volume1/tv/Show",
+		err:      errors.New("permission denied"),
+	}
+	libs := []plex.Library{{Key: "1", Title: "TV Shows", ScannedAt: scannedAt}}
+
+	_, err := c.Run(context.Background(), baseDeps(cfg, &plex.Fake{LibraryList: libs}, host)())
+	if err == nil {
+		t.Fatal("expected the subdirectory ListDir error to be returned")
+	}
+	if !strings.Contains(err.Error(), "/volume1/tv/Show") {
+		t.Errorf("error = %v, want it to name the subdirectory", err)
 	}
 }

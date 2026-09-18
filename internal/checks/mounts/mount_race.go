@@ -51,9 +51,8 @@ func runMountRace(ctx context.Context, d check.Deps) (check.Result, error) {
 // case becomes a finding rather than a check error.
 func inspectMount(ctx context.Context, d check.Deps, m config.Mount) (*check.Finding, error) {
 	key := m.Container + ":" + m.ContainerPath
-	cmd := "stat -c %d / " + shellQuote(m.ContainerPath) + "; ls -A " + shellQuote(m.ContainerPath) + " | wc -l"
 
-	out, err := d.Docker.Exec(ctx, m.Container, "sh", "-c", cmd)
+	out, err := d.Docker.Exec(ctx, m.Container, "sh", "-c", probeCmd(m.ContainerPath))
 	if err != nil {
 		f := d.NewFinding(mountRaceID, key, check.SeverityCritical, check.TierCorrect, "cannot inspect mount inside container")
 		f.Detail = err.Error()
@@ -62,7 +61,15 @@ func inspectMount(ctx context.Context, d check.Deps, m config.Mount) (*check.Fin
 
 	rootDev, pathDev, entries, err := parseMountProbe(out)
 	if err != nil {
-		return nil, fmt.Errorf("parse exec output for %s: %w", key, err)
+		// A probe this check cannot read is itself a symptom worth
+		// reporting on that mount, not a reason to abandon the rest: the
+		// mount whose bind failed is often exactly the one whose probe
+		// misbehaves.
+		f := d.NewFinding(mountRaceID, key, check.SeverityCritical, check.TierCorrect,
+			"cannot parse mount probe for "+key)
+		f.Detail = err.Error()
+		f.Data = map[string]any{"raw": out}
+		return &f, nil
 	}
 
 	hostMounted, err := d.Host.IsMountpoint(ctx, m.Host)
@@ -73,9 +80,18 @@ func inspectMount(ctx context.Context, d check.Deps, m config.Mount) (*check.Fin
 	return decideMountRace(d, m, key, rootDev, pathDev, entries, hostMounted), nil
 }
 
-// parseMountProbe reads the three lines `stat -c %d / <path>; ls -A <path>
-// | wc -l` prints: the root filesystem's device, the path's device, and its
-// entry count.
+// probeCmd builds the `sh -c` probe run inside the container: the root
+// filesystem's device, path's device, and path's entry count, one per
+// line. Stderr is redirected for the command as a whole, because a stat or
+// ls diagnostic (a path the container cannot see is the common case) would
+// otherwise interleave with the three lines parseMountProbe reads.
+func probeCmd(containerPath string) string {
+	q := shellQuote(containerPath)
+	return "( stat -c %d / " + q + "; ls -A " + q + " | wc -l ) 2>/dev/null"
+}
+
+// parseMountProbe reads the three lines probeCmd prints: the root
+// filesystem's device, the path's device, and its entry count.
 func parseMountProbe(out string) (rootDev, pathDev uint64, entries int64, err error) {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 3 {
@@ -119,8 +135,10 @@ func decideMountRace(d check.Deps, m config.Mount, key string, rootDev, pathDev 
 	}
 }
 
-// shellQuote wraps s in single quotes for a POSIX `sh -c` argument,
-// escaping any embedded single quote as '\''.
+// shellQuote wraps s in single quotes for a POSIX `sh -c` argument. An
+// embedded single quote is escaped by closing the quoted string, emitting
+// a backslash-escaped quote, and reopening it — the standard POSIX idiom,
+// since a single-quoted shell string has no escape character of its own.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

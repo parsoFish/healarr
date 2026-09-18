@@ -3,6 +3,7 @@ package plex
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -55,10 +56,12 @@ func runPlexScanFreshness(ctx context.Context, d check.Deps) (check.Result, erro
 }
 
 // scanFreshnessFinding applies the plex_scan_freshness rule to one
-// configured library: a title Plex no longer reports is a warn on its own;
-// otherwise the host directory's newest file modification time is compared
-// against Plex's last scan of that library, and the gap is recorded as a
-// metric regardless of whether it crosses the stale threshold.
+// configured library: a title Plex no longer reports is a warn on its own,
+// as is a library Plex has never scanned; otherwise the host directory's
+// newest modification time is compared against Plex's last scan of that
+// library, and the gap is recorded as a metric regardless of whether it
+// crosses the stale threshold. An empty directory tree yields neither: it
+// holds no file Plex could have missed.
 func scanFreshnessFinding(ctx context.Context, d check.Deps, configured config.PlexLibrary, plexLibs []plex.Library, metrics map[string]float64) (*check.Finding, error) {
 	lib, ok := findLibraryByTitle(plexLibs, configured.Title)
 	if !ok {
@@ -67,12 +70,23 @@ func scanFreshnessFinding(ctx context.Context, d check.Deps, configured config.P
 		return &f, nil
 	}
 
-	entries, err := d.Host.ListDir(ctx, configured.Path)
-	if err != nil {
-		return nil, fmt.Errorf("listdir %s: %w", configured.Path, err)
+	if lib.ScannedAt.IsZero() {
+		// Plex reports no scan at all. Subtracting the zero time would
+		// make every library look two millennia stale, so say what is
+		// actually wrong and record no age.
+		f := d.NewFinding(plexScanFreshnessID, "plex:"+lib.Key, check.SeverityWarn, check.TierNudge,
+			fmt.Sprintf("plex library %s has never been scanned", configured.Title))
+		return &f, nil
 	}
 
-	newest := newestModTime(entries)
+	newest, err := newestUnder(ctx, d, configured.Path)
+	if err != nil {
+		return nil, err
+	}
+	if newest.IsZero() {
+		return nil, nil
+	}
+
 	age := newest.Sub(lib.ScannedAt)
 	metrics["plex_scan_age_hours:"+lib.Key] = age.Hours()
 
@@ -94,6 +108,37 @@ func findLibraryByTitle(libs []plex.Library, title string) (plex.Library, bool) 
 		}
 	}
 	return plex.Library{}, false
+}
+
+// newestUnder returns the newest modification time two levels below dir:
+// dir's own entries plus the entries of each immediate subdirectory. Two
+// levels is what the media layout demands — a new episode lands in
+// <Library>/<Show>/<Season NN>/, and only that season directory's mtime
+// moves, so a one-level scan of the library root sees nothing — while a
+// full recursive walk of a media library would cost far more than the
+// answer is worth. A subdirectory that cannot be listed fails the check
+// rather than being read as "nothing changed down there".
+func newestUnder(ctx context.Context, d check.Deps, dir string) (time.Time, error) {
+	entries, err := d.Host.ListDir(ctx, dir)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("listdir %s: %w", dir, err)
+	}
+
+	newest := newestModTime(entries)
+	for _, e := range entries {
+		if !e.IsDir {
+			continue
+		}
+		sub := path.Join(dir, e.Name)
+		subEntries, err := d.Host.ListDir(ctx, sub)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("listdir %s: %w", sub, err)
+		}
+		if t := newestModTime(subEntries); t.After(newest) {
+			newest = t
+		}
+	}
+	return newest, nil
 }
 
 // newestModTime returns the latest ModTime among entries, or the zero

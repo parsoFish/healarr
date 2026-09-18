@@ -97,7 +97,7 @@ func assertFindings(t *testing.T, got []check.Finding, want []wantFinding) {
 func TestMountRace(t *testing.T) {
 	c := Checks(config.Config{})[0] // mount_race is the family's first check
 	singleMount := mountsCfg(config.Mount{Host: "/mnt/nas/tv", Container: "sonarr", ContainerPath: "/tv"})
-	execCmd := "sonarr sh -c stat -c %d / '/tv'; ls -A '/tv' | wc -l"
+	execCmd := probeKey("sonarr", "/tv")
 	healthyDevices := map[string]uint64{"/mnt/nas/tv": 41, "/mnt/nas": 2049}
 
 	tests := []struct {
@@ -139,12 +139,14 @@ func TestMountRace(t *testing.T) {
 			want: []wantFinding{{key: "sonarr:/tv", sev: check.SeverityCritical}},
 		},
 		{
+			// An unparseable probe is a critical finding in its own right,
+			// not a check error: the run must still report the other mounts.
 			name: "garbage output",
 			deps: baseDeps(singleMount,
 				&docker.Fake{ExecOutByCmd: map[string]string{execCmd: "x\n"}},
 				&hostfs.Fake{Devices: healthyDevices},
 			),
-			wantErr: errAny,
+			want: []wantFinding{{key: "sonarr:/tv", sev: check.SeverityCritical}},
 		},
 		{
 			name:    "not configured",
@@ -195,6 +197,61 @@ func assertIncidentFixture(t *testing.T, res check.Result) {
 	wantData := map[string]any{"rootDevice": uint64(2049), "pathDevice": uint64(2049), "entries": int64(0), "hostMounted": true}
 	if !reflect.DeepEqual(f.Data, wantData) {
 		t.Fatalf("incident Data = %+v, want %+v", f.Data, wantData)
+	}
+}
+
+// probeKey builds the docker.Fake ExecOutByCmd key for one container's
+// mount probe, so the tests track the probe command's exact form.
+func probeKey(container, path string) string {
+	return container + " sh -c " + probeCmd(path)
+}
+
+// TestMountRaceParseFailureDoesNotAbortRemainingMounts proves an
+// unparseable probe on one mount becomes that mount's own critical finding
+// and the loop keeps going: the second mount's genuine mount race is still
+// reported.
+func TestMountRaceParseFailureDoesNotAbortRemainingMounts(t *testing.T) {
+	c := Checks(config.Config{})[0]
+	cfg := mountsCfg(
+		config.Mount{Host: "/mnt/nas/tv", Container: "sonarr", ContainerPath: "/tv"},
+		config.Mount{Host: "/mnt/nas/movies", Container: "radarr", ContainerPath: "/movies"},
+	)
+	devices := map[string]uint64{"/mnt/nas/tv": 41, "/mnt/nas/movies": 42, "/mnt/nas": 2049}
+	dockerFake := &docker.Fake{ExecOutByCmd: map[string]string{
+		probeKey("sonarr", "/tv"):     "stat: cannot statx '/tv'\n",
+		probeKey("radarr", "/movies"): "2049\n2049\n0\n",
+	}}
+
+	res := run(t, c, baseDeps(cfg, dockerFake, &hostfs.Fake{Devices: devices}), []wantFinding{
+		{key: "sonarr:/tv", sev: check.SeverityCritical},
+		{key: "radarr:/movies", sev: check.SeverityCritical},
+	}, nil)
+
+	var parseFinding check.Finding
+	for _, f := range res.Findings {
+		if f.EntityKey == "sonarr:/tv" {
+			parseFinding = f
+		}
+	}
+	wantSummary := "cannot parse mount probe for sonarr:/tv"
+	if parseFinding.Summary != wantSummary {
+		t.Errorf("summary = %q, want %q", parseFinding.Summary, wantSummary)
+	}
+	if got := parseFinding.Data["raw"]; got != "stat: cannot statx '/tv'\n" {
+		t.Errorf("Data[raw] = %v, want the raw probe output", got)
+	}
+	if parseFinding.Detail == "" {
+		t.Error("Detail should carry the parse error rather than swallow it")
+	}
+}
+
+// TestProbeCmdSuppressesStderr pins the probe's shell form: stderr is
+// discarded for the whole command so a stat or ls diagnostic cannot be
+// interleaved into the three lines the parser reads.
+func TestProbeCmdSuppressesStderr(t *testing.T) {
+	want := "( stat -c %d / '/tv'; ls -A '/tv' | wc -l ) 2>/dev/null"
+	if got := probeCmd("/tv"); got != want {
+		t.Fatalf("probeCmd(/tv) = %q, want %q", got, want)
 	}
 }
 

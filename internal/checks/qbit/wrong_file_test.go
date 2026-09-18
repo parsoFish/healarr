@@ -11,15 +11,20 @@ import (
 )
 
 // filesFailQBit delegates to an embedded *qbittorrent.Fake for everything
-// except Files, which always fails. qbittorrent.Fake's single Err field
-// fails every method uniformly, so it can't express "Torrents succeeds,
-// Files fails" on its own.
+// except Files, which fails for the hashes in failHashes (or for every
+// hash when failHashes is nil). qbittorrent.Fake's single Err field fails
+// every method uniformly, so it can't express "Torrents succeeds, Files
+// fails for one torrent" on its own.
 type filesFailQBit struct {
 	*qbittorrent.Fake
-	filesErr error
+	filesErr   error
+	failHashes map[string]bool
 }
 
-func (f filesFailQBit) Files(_ context.Context, hash string) ([]qbittorrent.File, error) {
+func (f filesFailQBit) Files(ctx context.Context, hash string) ([]qbittorrent.File, error) {
+	if f.failHashes != nil && !f.failHashes[hash] {
+		return f.Fake.Files(ctx, hash)
+	}
 	f.Calls = append(f.Calls, "Files("+hash+")")
 	return nil, f.filesErr
 }
@@ -60,6 +65,14 @@ func TestWrongFileType(t *testing.T) {
 			want:     []wantFinding{{key: "qbit:CCC", sev: check.SeverityCritical}},
 		},
 		{
+			// qBittorrent categories are free text, so a user who typed
+			// "TV" must get the same rule as one who typed "tv".
+			name:     "iso in differently-cased tv category is disallowed",
+			torrents: []qbittorrent.Torrent{{Hash: "CCU", Name: "Fake Season Pack", Category: "TV"}},
+			files:    map[string][]qbittorrent.File{"CCU": {{Name: "season01.iso"}}},
+			want:     []wantFinding{{key: "qbit:CCU", sev: check.SeverityCritical}},
+		},
+		{
 			name:     "iso in movies category is allowed",
 			torrents: []qbittorrent.Torrent{{Hash: "DDD", Name: "Movie Disc", Category: "movies"}},
 			files:    map[string][]qbittorrent.File{"DDD": {{Name: "movie.iso"}}},
@@ -97,14 +110,66 @@ func TestWrongFileTypeTorrentsError(t *testing.T) {
 	run(t, c, baseDeps(cfg, qbit, nil, nil), nil, errAny)
 }
 
-func TestWrongFileTypeFilesError(t *testing.T) {
+// TestWrongFileTypeFilesErrorIsTolerated proves one torrent qBittorrent
+// cannot describe degrades to a single warn finding rather than failing
+// the whole check: the other torrents still get inspected.
+func TestWrongFileTypeFilesErrorIsTolerated(t *testing.T) {
 	c := Checks(config.Config{})[2]
 	cfg := testChecksCfg()
 	qbit := filesFailQBit{
 		Fake:     &qbittorrent.Fake{TorrentList: []qbittorrent.Torrent{{Hash: "AAA", Name: "Any", Category: "tv"}}},
 		filesErr: errors.New("files unavailable"),
 	}
-	run(t, c, baseDeps(cfg, qbit, nil, nil), nil, errAny)
+	res := run(t, c, baseDeps(cfg, qbit, nil, nil),
+		[]wantFinding{{key: inspectErrorsKey, sev: check.SeverityWarn}}, nil)
+
+	f := res.Findings[0]
+	if f.Tier != check.TierObserve {
+		t.Errorf("tier = %s, want %s", f.Tier, check.TierObserve)
+	}
+	if want := "1 torrent(s) could not be inspected"; f.Summary != want {
+		t.Errorf("summary = %q, want %q", f.Summary, want)
+	}
+	hashes, _ := f.Data["hashes"].([]string)
+	if len(hashes) != 1 || hashes[0] != "AAA" {
+		t.Errorf("Data[hashes] = %v, want [AAA]", f.Data["hashes"])
+	}
+	if got := f.Data["firstError"]; got != "files unavailable" {
+		t.Errorf("Data[firstError] = %v, want %q", got, "files unavailable")
+	}
+	if got := res.Metrics["qbit_wrong_file_inspect_errors"]; got != 1 {
+		t.Errorf("qbit_wrong_file_inspect_errors = %v, want 1", got)
+	}
+}
+
+// TestWrongFileTypeMixedErrorAndFinding proves an uninspectable torrent
+// does not hide a real one: the .exe in the second torrent is still
+// reported alongside the inspect-errors warning.
+func TestWrongFileTypeMixedErrorAndFinding(t *testing.T) {
+	c := Checks(config.Config{})[2]
+	cfg := testChecksCfg()
+	qbit := filesFailQBit{
+		Fake: &qbittorrent.Fake{
+			TorrentList: []qbittorrent.Torrent{
+				{Hash: "AAA", Name: "Unreadable", Category: "tv"},
+				{Hash: "BBB", Name: "Fake Release", Category: "tv"},
+			},
+			FilesByHash: map[string][]qbittorrent.File{"BBB": {{Name: "Show.S01E01.mkv.exe"}}},
+		},
+		filesErr:   errors.New("files unavailable"),
+		failHashes: map[string]bool{"AAA": true},
+	}
+	res := run(t, c, baseDeps(cfg, qbit, nil, nil), []wantFinding{
+		{key: "qbit:BBB", sev: check.SeverityCritical},
+		{key: inspectErrorsKey, sev: check.SeverityWarn},
+	}, nil)
+
+	if got := res.Metrics["qbit_wrong_file_inspect_errors"]; got != 1 {
+		t.Errorf("qbit_wrong_file_inspect_errors = %v, want 1", got)
+	}
+	if got := res.Metrics["qbit_wrong_file_torrents"]; got != 1 {
+		t.Errorf("qbit_wrong_file_torrents = %v, want 1 (the inspect-errors finding must not be counted)", got)
+	}
 }
 
 // TestWrongFileTypeFixtureDetail pins the "fake .exe episode" fixture's
@@ -153,5 +218,8 @@ func TestWrongFileTypeMetrics(t *testing.T) {
 		[]wantFinding{{key: "qbit:AAA", sev: check.SeverityCritical}, {key: "qbit:BBB", sev: check.SeverityCritical}}, nil)
 	if got := res.Metrics["qbit_wrong_file_torrents"]; got != 2 {
 		t.Errorf("qbit_wrong_file_torrents = %v, want 2", got)
+	}
+	if _, ok := res.Metrics["qbit_wrong_file_inspect_errors"]; ok {
+		t.Errorf("qbit_wrong_file_inspect_errors should be absent when every torrent was inspected")
 	}
 }

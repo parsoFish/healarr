@@ -9,10 +9,12 @@ import (
 	"github.com/parsoFish/healarr/internal/config"
 )
 
-// Checks returns this family's catalogue rows. cfg is read for thresholds
-// only; clients and the live config come from check.Deps at run time, so
-// every check in this family stays pure and testable without reconstructing
-// the catalogue per test case.
+// Checks returns this family's catalogue rows. The cfg parameter is
+// unused: plex_scan_freshness reads its threshold and library list
+// (PlexScanStaleAfter, PlexLibraries) from check.Deps.Cfg.Checks at Run
+// time rather than from this constructor, so the catalogue is independent
+// of any particular config value and each check stays pure and
+// table-testable.
 func Checks(_ config.Config) []check.Check {
 	return []check.Check{
 		plexReachabilityCheck(),
