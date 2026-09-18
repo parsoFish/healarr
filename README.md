@@ -15,7 +15,7 @@ Ships as a single Go binary — `internal/cli` for the uniform `healarr <service
 | **1** — CLI + clients | Uniform CLI, 9 service clients, fixtures, cross-compile CI | ✅ |
 | **2** — Checks + store + report | 21-check registry, SQLite store with dedup/resolve, `check run`/`report generate` verbs | ✅ |
 | **3** — Daemon + peer + digest | Cron daemon, Pi↔NAS peer channel, first real digest email | ✅ |
-| **4** — Web UI + decisions | `/healarr/` dashboard/decisions page, cleanups, staleness scoring | ⏳ |
+| **4** — Web UI + decisions | `/healarr/` dashboard/decisions page, cleanups, staleness scoring | ✅ |
 | **5** — LLM digest | Haiku 4.5 digest narrative, budget/cost log, `--no-llm` fallback | ⏳ |
 
 ## Build
@@ -83,7 +83,7 @@ healarr check run --id disk_pressure_pi_sd
 # Render the digest from the store's open findings
 healarr report generate
 
-# Run the daemon in the foreground until SIGINT/SIGTERM (observe-only in Phase 3; --dry-run is refused)
+# Run the daemon in the foreground until SIGINT/SIGTERM (also serves the web UI on the pi; --dry-run is refused)
 healarr agent serve
 
 # Send one test email through this node's configured sender, without waiting for the daily digest
@@ -91,9 +91,24 @@ healarr notify test --to you@example.com
 
 # Heartbeat the peer and report its latest pushed report (always exits 0; it's a diagnostic)
 healarr peer ping --json
+
+# Preview the ADR-016 staleness score for every series/movie, highest first (read-only, never touches the store)
+healarr staleness score --json
+
+# Plan (and print) a cleanup without touching anything
+healarr cleanup orphans --dry-run --json
+
+# Plan a cleanup and record the attempt; only actually deletes when actions.enabled=true and cleanup.dry_run=false
+healarr cleanup recycle
+
+# Snooze a staleness candidate for cfg.staleness.snooze_days (or --snooze N to override)
+healarr decide keep sonarr:42
+
+# Delete a staleness candidate from Sonarr/Radarr, decline matching Overseerr requests, hint the peer (gated by actions.enabled)
+healarr decide delete radarr:7
 ```
 
-Run `healarr --help` or `healarr <service> --help` for the full verb list per service. See [docs/runbook.md](docs/runbook.md)'s "Daemon operations" section for `agent serve`/`notify test`/`peer ping` and the cron schedule, and "Running checks by hand" for the full check catalogue, `--dry-run` semantics, and how findings dedupe/resolve.
+Run `healarr --help` or `healarr <service> --help` for the full verb list per service. See [docs/runbook.md](docs/runbook.md)'s "Daemon operations" section for `agent serve`/`notify test`/`peer ping` and the cron schedule, "Web UI" / "Decisions" / "Cleanups and the actions gate" for the Phase 4 surfaces, and "Running checks by hand" for the full check catalogue, `--dry-run` semantics, and how findings dedupe/resolve.
 
 ## Documentation
 
