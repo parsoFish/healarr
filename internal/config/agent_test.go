@@ -142,6 +142,29 @@ func TestLoadRejectsNonPositiveHeartbeatInterval(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsNonPositivePeerStaleAfter proves a zero or negative
+// peer_stale_after is rejected: it would make every peer heartbeat look
+// stale immediately (or, negative, never stale at all).
+func TestLoadRejectsNonPositivePeerStaleAfter(t *testing.T) {
+	tests := []string{"0s", "-1m"}
+	for _, bad := range tests {
+		t.Run(bad, func(t *testing.T) {
+			dir := t.TempDir()
+			body := minimalConfig + "\n[agent]\npeer_stale_after = \"" + bad + "\"\n"
+			cfgPath := writeFile(t, dir, "config.toml", body, 0o644)
+			writeFile(t, dir, "secrets.toml", "", 0o600)
+
+			_, _, err := Load(cfgPath)
+			if err == nil {
+				t.Fatalf("expected peer_stale_after %q to be rejected", bad)
+			}
+			if !strings.Contains(err.Error(), "agent.peer_stale_after") {
+				t.Errorf("error %q should name agent.peer_stale_after", err)
+			}
+		})
+	}
+}
+
 // TestLocationDefaultsToLocal proves Config.Location() falls back to the
 // host's local zone when agent.timezone is unset, matching the doc comment
 // on Agent.Timezone.
