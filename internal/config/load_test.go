@@ -150,6 +150,45 @@ func TestLoadChecksDefaultsAndOverride(t *testing.T) {
 	}
 }
 
+// TestLoadDecodesPlexLibrariesAndRecycleDirs proves the inline-table-array
+// TOML shape for [checks].plex_libraries (a list of {title, path} tables)
+// round-trips through BurntSushi/toml into []config.PlexLibrary, alongside
+// a plain string-array field (recycle_dirs) in the same table.
+func TestLoadDecodesPlexLibrariesAndRecycleDirs(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalConfig + "\n[checks]\n" +
+		"plex_libraries = [\n" +
+		"  { title = \"TV Shows\", path = \"/volume1/tv\" },\n" +
+		"  { title = \"Movies\", path = \"/volume1/movies\" },\n" +
+		"]\n" +
+		"recycle_dirs = [\"/volume1/#recycle\"]\n"
+	cfgPath := writeFile(t, dir, "config.toml", body, 0o644)
+	writeFile(t, dir, "secrets.toml", "", 0o600)
+
+	cfg, _, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	wantLibraries := []PlexLibrary{
+		{Title: "TV Shows", Path: "/volume1/tv"},
+		{Title: "Movies", Path: "/volume1/movies"},
+	}
+	if len(cfg.Checks.PlexLibraries) != len(wantLibraries) {
+		t.Fatalf("PlexLibraries = %+v, want %+v", cfg.Checks.PlexLibraries, wantLibraries)
+	}
+	for i, want := range wantLibraries {
+		if cfg.Checks.PlexLibraries[i] != want {
+			t.Errorf("PlexLibraries[%d] = %+v, want %+v", i, cfg.Checks.PlexLibraries[i], want)
+		}
+	}
+
+	wantRecycleDirs := []string{"/volume1/#recycle"}
+	if len(cfg.Checks.RecycleDirs) != len(wantRecycleDirs) || cfg.Checks.RecycleDirs[0] != wantRecycleDirs[0] {
+		t.Errorf("RecycleDirs = %v, want %v", cfg.Checks.RecycleDirs, wantRecycleDirs)
+	}
+}
+
 func TestEnvOverrideIgnoresEmptyValue(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := writeFile(t, dir, "config.toml", minimalConfig, 0o644)
