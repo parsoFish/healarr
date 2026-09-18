@@ -13,6 +13,7 @@ RestartSec=10
 Environment=TZ=Australia/Brisbane
 NoNewPrivileges=true
 ProtectSystem=full
+StateDirectory=healarr
 ReadWritePaths=/var/lib/healarr
 PrivateTmp=true
 

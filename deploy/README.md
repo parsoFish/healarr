@@ -20,6 +20,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now healarr
 ```
 
+`StateDirectory=healarr` has systemd create `/var/lib/healarr` (owned by `User=`) before the
+daemon starts, so a first run on a fresh host doesn't fail on a missing state directory —
+`store.Open` creates the database file but never its parent.
+
 The mount paths, `User`, and `Environment=TZ=...` are the simplarr defaults for this host. If
 your Pi's mounts, user, or timezone differ, edit `/etc/systemd/system/healarr.service` (not the
 copy in this repo) before enabling it, then `sudo systemctl daemon-reload`.
@@ -51,10 +55,13 @@ giving up.
 ## NAS — DSM Task Scheduler
 
 DSM has no systemd, so `dsm/healarr-boot.sh` is a plain shell launcher: it backgrounds the agent
-with `nohup setsid`, tracks its PID in `agent.pid`, and is idempotent — running it while the agent
-is already up (checked via `kill -0` on the recorded PID) logs that and exits 0 instead of
-starting a second copy. All paths inside it are absolute; DSM boot-time tasks run with a minimal
-environment and no `$HOME`.
+with `nohup`, waits a second and checks (`kill -0`) that the process it started is still alive
+before recording its PID in `agent.pid`, and is idempotent — running it while the agent is already
+up (checked the same way on the recorded PID) logs that and exits 0 instead of starting a second
+copy. A daemon that exits immediately (bad config, missing binary) therefore fails the task with
+`healarr failed to start; see /volume1/docker/healarr/agent.log` and leaves no stale PID file,
+rather than being reported as a clean boot. All paths inside it are absolute; DSM boot-time tasks
+run with a minimal environment and no `$HOME`.
 
 ```bash
 scp dist/healarr-linux-amd64 nas:/volume1/docker/healarr/healarr
