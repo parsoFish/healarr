@@ -25,12 +25,37 @@ func openTemp(t *testing.T) *Store {
 func TestOpenAppliesMigrationsAndPragmas(t *testing.T) {
 	s := openTemp(t)
 	v, err := s.SchemaVersion(context.Background())
-	if err != nil || v != 1 {
+	if err != nil || v != 2 {
 		t.Fatalf("version=%d err=%v", v, err)
 	}
 	var mode string
 	if err := s.db.QueryRow("PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
+	}
+}
+
+// TestOpenAppliesPhase4IndexMigration proves 0002_phase4_indexes.sql runs
+// on Open: a fresh store lands on schema v2 (not just 0001's v1), and both
+// indexes it adds (decisions_status, remediations_created) exist in
+// sqlite_master — moved here from 0001_init.sql because both hosts this
+// branch targets had already reached schema v1 before this migration was
+// written (see internal/store/migrations/0002_phase4_indexes.sql).
+func TestOpenAppliesPhase4IndexMigration(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+
+	v, err := s.SchemaVersion(ctx)
+	if err != nil || v != 2 {
+		t.Fatalf("version=%d err=%v, want 2", v, err)
+	}
+
+	for _, index := range []string{"decisions_status", "remediations_created"} {
+		var name string
+		if err := s.db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?`, index,
+		).Scan(&name); err != nil {
+			t.Fatalf("%s index missing after migration to v2: %v", index, err)
+		}
 	}
 }
 
@@ -59,8 +84,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if v1 != 1 || v2 != 1 {
-		t.Fatalf("versions = %d, %d; want 1, 1", v1, v2)
+	if v1 != 2 || v2 != 2 {
+		t.Fatalf("versions = %d, %d; want 2, 2", v1, v2)
 	}
 }
 
