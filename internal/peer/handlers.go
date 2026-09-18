@@ -7,16 +7,14 @@ import (
 	"net/http"
 )
 
-// requestError carries the HTTP status a request-decoding failure should
-// produce, distinguishing an oversized body (413) from any other decode
-// failure (400).
+// requestError carries the outcome of a failed request decode: status and
+// msg are safe to send to the client as-is, while err (the full detail)
+// belongs only in slog.
 type requestError struct {
 	status int
+	msg    string
 	err    error
 }
-
-func (e *requestError) Error() string { return e.err.Error() }
-func (e *requestError) Unwrap() error { return e.err }
 
 // decodeBody reads r's body, capped at maxBodyBytes, and JSON-decodes it
 // into v.
@@ -25,11 +23,26 @@ func decodeBody(w http.ResponseWriter, r *http.Request, v any) *requestError {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			return &requestError{status: http.StatusRequestEntityTooLarge, err: fmt.Errorf("peer: request body exceeds %d bytes: %w", maxBodyBytes, err)}
+			return &requestError{
+				status: http.StatusRequestEntityTooLarge,
+				msg:    "request body too large",
+				err:    fmt.Errorf("peer: request body exceeds %d bytes: %w", maxBodyBytes, err),
+			}
 		}
-		return &requestError{status: http.StatusBadRequest, err: fmt.Errorf("peer: decode request body: %w", err)}
+		return &requestError{
+			status: http.StatusBadRequest,
+			msg:    "bad request",
+			err:    fmt.Errorf("peer: decode request body: %w", err),
+		}
 	}
 	return nil
+}
+
+// rejectRequest logs the decode failure's detail (never sent to the
+// client) and writes the safe status/message pair as the response.
+func (s *server) rejectRequest(w http.ResponseWriter, r *http.Request, rerr *requestError) {
+	s.logger.Debug("peer: rejecting request", "method", r.Method, "path", r.URL.Path, "status", rerr.status, "err", rerr.err)
+	http.Error(w, rerr.msg, rerr.status)
 }
 
 // writeJSON writes v as the JSON response body with the given status.
@@ -49,7 +62,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func (s *server) handleReport(w http.ResponseWriter, r *http.Request) {
 	var env ReportEnvelope
 	if rerr := decodeBody(w, r, &env); rerr != nil {
-		writeError(w, rerr.status, "bad request")
+		s.rejectRequest(w, r, rerr)
 		return
 	}
 	id, err := s.h.ReceiveReport(r.Context(), env)
@@ -82,7 +95,7 @@ func (s *server) handleLatestReport(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleDecision(w http.ResponseWriter, r *http.Request) {
 	var d Decision
 	if rerr := decodeBody(w, r, &d); rerr != nil {
-		writeError(w, rerr.status, "bad request")
+		s.rejectRequest(w, r, rerr)
 		return
 	}
 	id, err := s.h.ReceiveDecision(r.Context(), d)
@@ -98,7 +111,7 @@ func (s *server) handleDecision(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var hb Heartbeat
 	if rerr := decodeBody(w, r, &hb); rerr != nil {
-		writeError(w, rerr.status, "bad request")
+		s.rejectRequest(w, r, rerr)
 		return
 	}
 	if err := s.h.ReceiveHeartbeat(r.Context(), hb); err != nil {

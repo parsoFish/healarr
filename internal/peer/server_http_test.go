@@ -220,6 +220,36 @@ func TestListenAndServeStopsOnAlreadyCancelledContext(t *testing.T) {
 	}
 }
 
+func TestServeSurfacesUnexpectedListenerErrorWithoutCtxCancel(t *testing.T) {
+	h, err := NewServer("tok", &FakeHandler{}, testLogger())
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- Serve(context.Background(), ln, h) }()
+
+	// Closing the listener out from under Serve (without ever cancelling
+	// its ctx) forces srv.Serve to fail with something other than
+	// http.ErrServerClosed, exercising the non-graceful error path.
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected an error from the closed listener")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Serve did not return after its listener was closed")
+	}
+}
+
 func TestListenAndServeReturnsErrorForInvalidAddr(t *testing.T) {
 	h, err := NewServer("tok", &FakeHandler{}, testLogger())
 	if err != nil {
