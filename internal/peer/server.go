@@ -19,6 +19,18 @@ const maxBodyBytes = 4 << 20 // 4 MiB
 // requests to finish once the caller's context is cancelled.
 const shutdownTimeout = 5 * time.Second
 
+// HTTP server timeouts. A network-facing server must never rely on the
+// http.Server zero-value (no timeout at all), since that leaves it open
+// to a slow/malicious peer holding a connection open indefinitely (e.g.
+// slowloris). Every *http.Server this package builds sets all four
+// explicitly via newHTTPServer.
+const (
+	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 15 * time.Second
+	writeTimeout      = 15 * time.Second
+	idleTimeout       = 60 * time.Second
+)
+
 // Handler is what the server needs from the agent/store to answer peer
 // requests. Implementations must not mutate the values they are given.
 type Handler interface {
@@ -113,7 +125,7 @@ func ListenAndServe(ctx context.Context, addr string, handler http.Handler) erro
 // ListenAndServe lets callers (and tests) bind with net.Listen first, e.g.
 // "127.0.0.1:0", and learn the assigned port before serving starts.
 func Serve(ctx context.Context, ln net.Listener, handler http.Handler) error {
-	srv := &http.Server{Handler: handler}
+	srv := newHTTPServer(handler)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -134,5 +146,18 @@ func Serve(ctx context.Context, ln net.Listener, handler http.Handler) error {
 			return fmt.Errorf("peer: shutdown: %w", err)
 		}
 		return <-errCh
+	}
+}
+
+// newHTTPServer builds the *http.Server Serve runs, with the package's
+// read/write/idle timeouts set explicitly (see their doc comment above)
+// rather than left at the zero-value default.
+func newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 }

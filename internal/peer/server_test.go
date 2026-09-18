@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/parsoFish/healarr/internal/config"
 )
@@ -64,6 +66,60 @@ func (f *FakeHandler) ReceiveHeartbeat(_ context.Context, hb Heartbeat) error {
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// failingResponseWriter wraps an httptest.ResponseRecorder but makes every
+// Write fail, so tests can exercise writeJSON's error-logging path without
+// a real network failure.
+type failingResponseWriter struct {
+	*httptest.ResponseRecorder
+}
+
+func (f *failingResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("boom: simulated write failure")
+}
+
+func TestNewHTTPServerSetsNonZeroTimeouts(t *testing.T) {
+	srv := newHTTPServer(http.NotFoundHandler())
+	if srv.ReadHeaderTimeout != readHeaderTimeout {
+		t.Errorf("ReadHeaderTimeout = %v, want %v", srv.ReadHeaderTimeout, readHeaderTimeout)
+	}
+	if srv.ReadTimeout != readTimeout {
+		t.Errorf("ReadTimeout = %v, want %v", srv.ReadTimeout, readTimeout)
+	}
+	if srv.WriteTimeout != writeTimeout {
+		t.Errorf("WriteTimeout = %v, want %v", srv.WriteTimeout, writeTimeout)
+	}
+	if srv.IdleTimeout != idleTimeout {
+		t.Errorf("IdleTimeout = %v, want %v", srv.IdleTimeout, idleTimeout)
+	}
+	for name, got := range map[string]time.Duration{
+		"ReadHeaderTimeout": srv.ReadHeaderTimeout,
+		"ReadTimeout":       srv.ReadTimeout,
+		"WriteTimeout":      srv.WriteTimeout,
+		"IdleTimeout":       srv.IdleTimeout,
+	} {
+		if got <= 0 {
+			t.Errorf("%s = %v, want a positive timeout (never the zero-value default)", name, got)
+		}
+	}
+}
+
+func TestWriteJSONLogsWriteFailure(t *testing.T) {
+	var logBuf bytes.Buffer
+	s := &server{h: &FakeHandler{}, logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
+	w := &failingResponseWriter{httptest.NewRecorder()}
+	r := httptest.NewRequest(http.MethodPost, "/v1/report", nil)
+
+	s.writeJSON(w, r, http.StatusOK, Ack{Status: "ok"})
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "write response failed") {
+		t.Fatalf("expected a write-failure log line, got %q", logged)
+	}
+	if !strings.Contains(logged, "/v1/report") || !strings.Contains(logged, http.MethodPost) {
+		t.Fatalf("expected method/path in the log line, got %q", logged)
+	}
 }
 
 // newRoundTripServer builds a NewServer-backed httptest.Server plus a real
