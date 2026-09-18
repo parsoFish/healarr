@@ -138,7 +138,7 @@ func TestScheduleEntriesMatchConfiguration(t *testing.T) {
 				}
 			})
 
-			c, err := a.Schedule()
+			c, err := a.Schedule(context.Background())
 			if err != nil {
 				t.Fatalf("Schedule() err = %v", err)
 			}
@@ -153,7 +153,7 @@ func TestScheduleEntriesMatchConfiguration(t *testing.T) {
 func TestScheduleReturnsNotStartedCron(t *testing.T) {
 	a := newScheduleTestAgent(t, nil)
 
-	c, err := a.Schedule()
+	c, err := a.Schedule(context.Background())
 	if err != nil {
 		t.Fatalf("Schedule() err = %v", err)
 	}
@@ -176,7 +176,7 @@ func TestScheduleRejectsInvalidConfig(t *testing.T) {
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			a := newScheduleTestAgent(t, mutate)
-			if _, err := a.Schedule(); err == nil {
+			if _, err := a.Schedule(context.Background()); err == nil {
 				t.Fatal("Schedule() err = nil, want an error")
 			}
 		})
@@ -196,7 +196,7 @@ func TestScheduleCycleAndCheckpointJobsRunTheirWork(t *testing.T) {
 		o.Deps = fakeDeps(check.Deps{Node: config.NodePi, Now: func() time.Time { return scheduleT0 }}, nil)
 	})
 
-	c, err := a.Schedule()
+	c, err := a.Schedule(context.Background())
 	if err != nil {
 		t.Fatalf("Schedule() err = %v", err)
 	}
@@ -221,7 +221,7 @@ func TestScheduleCheckpointJobLogsBusyAsWarn(t *testing.T) {
 		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 	})
 
-	c, err := a.Schedule()
+	c, err := a.Schedule(context.Background())
 	if err != nil {
 		t.Fatalf("Schedule() err = %v", err)
 	}
@@ -244,7 +244,7 @@ func TestScheduleHeartbeatJobRuns(t *testing.T) {
 	fp := &peer.Fake{}
 	a := newScheduleTestAgent(t, func(o *Options) { o.Peer = fp })
 
-	c, err := a.Schedule()
+	c, err := a.Schedule(context.Background())
 	if err != nil {
 		t.Fatalf("Schedule() err = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestScheduleDigestJobRuns(t *testing.T) {
 		o.Sender = fsend
 	})
 
-	c, err := a.Schedule()
+	c, err := a.Schedule(context.Background())
 	if err != nil {
 		t.Fatalf("Schedule() err = %v", err)
 	}

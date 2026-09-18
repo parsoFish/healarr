@@ -55,13 +55,19 @@ func cycleCadences() []cycleCadence {
 // fatal — an unreachable peer is logged and otherwise ignored, mirroring
 // pushReport (cycle.go) — but a local failure recording the outbound
 // message is returned, since that indicates a real store problem.
+// UptimeSeconds is time since a.startedAt (set by Run); it reports 0 when
+// startedAt was never set, e.g. a direct call bypassing Run.
 func (a *Agent) SendHeartbeat(ctx context.Context) error {
 	if a.peer == nil {
 		return nil
 	}
 
 	now := a.now()
-	hb := peer.Heartbeat{Node: a.cfg.Node, At: now, Version: a.version}
+	var uptime int64
+	if !a.startedAt.IsZero() {
+		uptime = int64(now.Sub(a.startedAt).Seconds())
+	}
+	hb := peer.Heartbeat{Node: a.cfg.Node, At: now, Version: a.version, UptimeSeconds: uptime}
 
 	if _, err := a.peer.Heartbeat(ctx, hb); err != nil {
 		a.logger.Error("agent: send heartbeat to peer failed", "node", a.cfg.Node, "error", err)
@@ -86,7 +92,12 @@ func (a *Agent) SendHeartbeat(ctx context.Context) error {
 // cron.Recover (a panicking job is logged, never crashes the daemon) and
 // cron.SkipIfStillRunning (an overlapping run of the same job is skipped
 // and logged rather than left to pile up), per constraints.md.
-func (a *Agent) Schedule() (*cron.Cron, error) {
+//
+// Every job runs with ctx (never context.Background()): cancelling ctx —
+// as Run does on shutdown — cancels whatever a job is doing, so
+// cron.Stop()'s wait for running jobs can actually complete instead of
+// blocking forever on a stalled one (e.g. a hung msmtp call).
+func (a *Agent) Schedule(ctx context.Context) (*cron.Cron, error) {
 	loc, err := a.cfg.Location()
 	if err != nil {
 		return nil, fmt.Errorf("agent: schedule: %w", err)
@@ -98,50 +109,50 @@ func (a *Agent) Schedule() (*cron.Cron, error) {
 		cron.WithChain(cron.Recover(chainLogger), cron.SkipIfStillRunning(chainLogger)),
 	)
 
-	if err := a.scheduleCycles(c); err != nil {
+	if err := a.scheduleCycles(ctx, c); err != nil {
 		return nil, err
 	}
-	if err := a.scheduleHeartbeat(c); err != nil {
+	if err := a.scheduleHeartbeat(ctx, c); err != nil {
 		return nil, err
 	}
-	if err := a.scheduleDigest(c); err != nil {
+	if err := a.scheduleDigest(ctx, c); err != nil {
 		return nil, err
 	}
-	if err := a.scheduleCheckpoint(c); err != nil {
+	if err := a.scheduleCheckpoint(ctx, c); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
 // scheduleCycles registers the four fixed-cadence check cycles.
-func (a *Agent) scheduleCycles(c *cron.Cron) error {
+func (a *Agent) scheduleCycles(ctx context.Context, c *cron.Cron) error {
 	for _, cc := range cycleCadences() {
 		cadence := cc.cadence
-		if _, err := c.AddFunc(cc.spec, func() { a.runScheduledCycle(cadence) }); err != nil {
+		if _, err := c.AddFunc(cc.spec, func() { a.runScheduledCycle(ctx, cadence) }); err != nil {
 			return fmt.Errorf("agent: schedule: cycle %s: %w", cc.spec, err)
 		}
 	}
 	return nil
 }
 
-// runScheduledCycle runs one cycle with a background context; a failure is
-// logged and never propagated, since a cron job has nowhere to return an
-// error to.
-func (a *Agent) runScheduledCycle(cadence time.Duration) {
-	if _, _, err := a.RunCycle(context.Background(), cadence); err != nil {
+// runScheduledCycle runs one cycle with ctx (the scheduler's, ultimately
+// Run's); a failure is logged and never propagated, since a cron job has
+// nowhere to return an error to.
+func (a *Agent) runScheduledCycle(ctx context.Context, cadence time.Duration) {
+	if _, _, err := a.RunCycle(ctx, cadence); err != nil {
 		a.logger.Error("agent: scheduled cycle failed", "cadence", cadence, "error", err)
 	}
 }
 
 // scheduleHeartbeat registers the heartbeat job, only when a peer client is
 // configured (a nil peer has nowhere to send one).
-func (a *Agent) scheduleHeartbeat(c *cron.Cron) error {
+func (a *Agent) scheduleHeartbeat(ctx context.Context, c *cron.Cron) error {
 	if a.peer == nil {
 		return nil
 	}
 	spec := fmt.Sprintf("@every %s", a.cfg.Agent.HeartbeatInterval)
 	_, err := c.AddFunc(spec, func() {
-		if err := a.SendHeartbeat(context.Background()); err != nil {
+		if err := a.SendHeartbeat(ctx); err != nil {
 			a.logger.Error("agent: scheduled heartbeat failed", "error", err)
 		}
 	})
@@ -153,7 +164,7 @@ func (a *Agent) scheduleHeartbeat(c *cron.Cron) error {
 
 // scheduleDigest registers the daily digest job, only when this agent can
 // send mail (HasSender — the Pi only; constraints.md).
-func (a *Agent) scheduleDigest(c *cron.Cron) error {
+func (a *Agent) scheduleDigest(ctx context.Context, c *cron.Cron) error {
 	if !a.HasSender() {
 		return nil
 	}
@@ -162,7 +173,7 @@ func (a *Agent) scheduleDigest(c *cron.Cron) error {
 		return fmt.Errorf("agent: schedule: digest: %w", err)
 	}
 	_, err = c.AddFunc(spec, func() {
-		if _, err := a.SendDigest(context.Background()); err != nil {
+		if _, err := a.SendDigest(ctx); err != nil {
 			a.logger.Error("agent: scheduled digest failed", "error", err)
 		}
 	})
@@ -176,13 +187,13 @@ func (a *Agent) scheduleDigest(c *cron.Cron) error {
 // is expected (another connection is pinning an older WAL snapshot) and is
 // logged at Warn rather than Error: the checkpoint job simply retries the
 // next night.
-func (a *Agent) scheduleCheckpoint(c *cron.Cron) error {
+func (a *Agent) scheduleCheckpoint(ctx context.Context, c *cron.Cron) error {
 	spec, err := dailyCronSpec(a.cfg.Agent.CheckpointAt)
 	if err != nil {
 		return fmt.Errorf("agent: schedule: checkpoint: %w", err)
 	}
 	_, err = c.AddFunc(spec, func() {
-		if err := a.store.Checkpoint(context.Background()); err != nil {
+		if err := a.store.Checkpoint(ctx); err != nil {
 			if errors.Is(err, store.ErrCheckpointBusy) {
 				a.logger.Warn("agent: checkpoint busy, retrying next night", "error", err)
 				return

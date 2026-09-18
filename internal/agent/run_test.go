@@ -129,10 +129,11 @@ func TestRunPropagatesScheduleError(t *testing.T) {
 	}
 }
 
-// TestRunPropagatesPeerServerBindError proves a peer server that fails to
-// bind (address already in use) surfaces its error from Run, once ctx is
-// done, rather than being silently dropped.
-func TestRunPropagatesPeerServerBindError(t *testing.T) {
+// TestRunPropagatesPeerServerBindErrorPromptly proves a peer server that
+// fails to bind (address already in use) surfaces its error from Run on
+// its own — a bind failure is fatal, not something Run should have to
+// wait for shutdown to notice — with ctx never cancelled at all.
+func TestRunPropagatesPeerServerBindErrorPromptly(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen: %v", err)
@@ -145,11 +146,98 @@ func TestRunPropagatesPeerServerBindError(t *testing.T) {
 		o.PeerToken = "tok"
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Run must still surface the (already-failed) bind error
-
-	if err := runWithTimeout(t, a, ctx); err == nil {
+	// ctx is a live, never-cancelled context: Run must still return the
+	// bind error on its own rather than hanging until something cancels it.
+	if err := runWithTimeout(t, a, context.Background()); err == nil {
 		t.Fatal("Run() err = nil, want a peer server bind error")
+	}
+}
+
+// TestRunCancelsInFlightJobsOnShutdown proves a scheduled job runs with
+// Run's own ctx, not context.Background(): a heartbeat job that blocks
+// until its ctx is done would hang cron.Stop() (and so Run) forever under
+// the old behaviour, but returns promptly once ctx is cancelled here.
+func TestRunCancelsInFlightJobsOnShutdown(t *testing.T) {
+	tp := newTestPeerClient(true) // Heartbeat blocks until ctx.Done()
+	a := newRunTestAgent(t, func(o *Options) {
+		o.Peer = tp
+		o.Cfg.Agent.HeartbeatInterval = time.Millisecond // fires almost immediately
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+
+	select {
+	case <-tp.Called():
+	case <-time.After(2 * time.Second):
+		t.Fatal("heartbeat job never started")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run() err = %v, want nil", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Run() did not return within 500ms of ctx cancellation (job's ctx wasn't cancelled)")
+	}
+}
+
+// TestRunSetsStartedAtFromNow proves Run stamps startedAt from a.now()
+// before dispatching any job (fixedNow makes this exact, not just
+// "close enough"), so SendHeartbeat can report a real uptime.
+func TestRunSetsStartedAtFromNow(t *testing.T) {
+	a := newRunTestAgent(t, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := runWithTimeout(t, a, ctx); err != nil {
+		t.Fatalf("Run() err = %v, want nil", err)
+	}
+
+	if !a.startedAt.Equal(runT0) {
+		t.Fatalf("startedAt = %v, want %v (a.now() at Run's start)", a.startedAt, runT0)
+	}
+}
+
+// TestSendHeartbeatReportsUptimeSinceStartedAt proves the heartbeat's
+// UptimeSeconds is now - startedAt when startedAt has been set (as Run
+// does).
+func TestSendHeartbeatReportsUptimeSinceStartedAt(t *testing.T) {
+	tp := newTestPeerClient(false)
+	a := newRunTestAgent(t, func(o *Options) { o.Peer = tp })
+	a.startedAt = runT0.Add(-90 * time.Second)
+
+	if err := a.SendHeartbeat(context.Background()); err != nil {
+		t.Fatalf("SendHeartbeat() err = %v", err)
+	}
+	hbs := tp.Heartbeats()
+	if len(hbs) != 1 {
+		t.Fatalf("Heartbeats() = %d, want 1", len(hbs))
+	}
+	if hbs[0].UptimeSeconds != 90 {
+		t.Fatalf("UptimeSeconds = %d, want 90", hbs[0].UptimeSeconds)
+	}
+}
+
+// TestSendHeartbeatUptimeZeroWhenStartedAtUnset proves a direct
+// SendHeartbeat call that bypasses Run (startedAt left at its zero value)
+// reports 0 uptime rather than a bogus multi-century duration.
+func TestSendHeartbeatUptimeZeroWhenStartedAtUnset(t *testing.T) {
+	tp := newTestPeerClient(false)
+	a := newRunTestAgent(t, func(o *Options) { o.Peer = tp })
+
+	if err := a.SendHeartbeat(context.Background()); err != nil {
+		t.Fatalf("SendHeartbeat() err = %v", err)
+	}
+	hbs := tp.Heartbeats()
+	if len(hbs) != 1 {
+		t.Fatalf("Heartbeats() = %d, want 1", len(hbs))
+	}
+	if hbs[0].UptimeSeconds != 0 {
+		t.Fatalf("UptimeSeconds = %d, want 0 (startedAt never set)", hbs[0].UptimeSeconds)
 	}
 }
 

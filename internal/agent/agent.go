@@ -72,6 +72,17 @@ type Agent struct {
 	now       func() time.Time
 	version   string
 	peerToken string
+
+	// startedAt is set once, by Run, to a.now() before the scheduler
+	// starts dispatching jobs — never written concurrently with a read,
+	// since every read happens inside a job goroutine cron spawns after
+	// Run's call to sched.Start() (itself after this field is set), and
+	// the Go memory model guarantees a goroutine's creation happens-after
+	// everything before the "go" statement that started it. Zero
+	// (unset) when SendHeartbeat is called directly without going
+	// through Run, e.g. in tests; SendHeartbeat treats that as "unknown
+	// uptime" rather than computing a bogus multi-century duration.
+	startedAt time.Time
 }
 
 // New validates o and returns an Agent. Logger defaults to slog.Default()

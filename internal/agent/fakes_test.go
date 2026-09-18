@@ -2,10 +2,12 @@ package agent
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/peer"
 	"github.com/parsoFish/healarr/internal/store"
 )
 
@@ -176,4 +178,64 @@ func registryWith(checks ...check.Check) *check.Registry {
 		}
 	}
 	return r
+}
+
+// testPeerClient is a peer.Client test double used where peer.Fake isn't
+// enough: peer.Fake only records a formatted call string, not the actual
+// argument, so it can't assert on a Heartbeat's UptimeSeconds. It is safe
+// for concurrent use (a scheduled job's goroutine calls Heartbeat while
+// the test goroutine reads back via Snapshot/Called), and — when Block is
+// true — Heartbeat doesn't return until ctx is done, so a test can prove a
+// scheduled job actually received a live, cancellable context rather than
+// context.Background().
+type testPeerClient struct {
+	Block bool // when true, Heartbeat blocks until ctx.Done()
+
+	mu         sync.Mutex
+	heartbeats []peer.Heartbeat
+	called     chan struct{}
+	once       sync.Once
+}
+
+var _ peer.Client = (*testPeerClient)(nil)
+
+func newTestPeerClient(block bool) *testPeerClient {
+	return &testPeerClient{Block: block, called: make(chan struct{})}
+}
+
+func (p *testPeerClient) PushReport(context.Context, peer.ReportEnvelope) (peer.Ack, error) {
+	return peer.Ack{}, nil
+}
+
+func (p *testPeerClient) FetchLatest(context.Context) (peer.ReportEnvelope, bool, error) {
+	return peer.ReportEnvelope{}, false, nil
+}
+
+func (p *testPeerClient) SendDecision(context.Context, peer.Decision) (peer.Ack, error) {
+	return peer.Ack{}, nil
+}
+
+// Heartbeat records hb, signals Called (once, on the first call), then —
+// when Block is true — waits for ctx to be done before returning ctx.Err().
+func (p *testPeerClient) Heartbeat(ctx context.Context, hb peer.Heartbeat) (peer.Ack, error) {
+	p.mu.Lock()
+	p.heartbeats = append(p.heartbeats, hb)
+	p.mu.Unlock()
+	p.once.Do(func() { close(p.called) })
+
+	if p.Block {
+		<-ctx.Done()
+		return peer.Ack{}, ctx.Err()
+	}
+	return peer.Ack{}, nil
+}
+
+// Called is closed once the first Heartbeat call has been recorded.
+func (p *testPeerClient) Called() <-chan struct{} { return p.called }
+
+// Heartbeats returns a snapshot of every Heartbeat call recorded so far.
+func (p *testPeerClient) Heartbeats() []peer.Heartbeat {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]peer.Heartbeat(nil), p.heartbeats...)
 }
