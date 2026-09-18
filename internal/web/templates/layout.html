@@ -1,0 +1,41 @@
+{{/* layout.html defines the shared "header"/"footer" partials every
+     page template includes. It intentionally does NOT define a
+     "content" block: html/template parses every *.html file in this
+     directory into one shared template set, and each file defining its
+     own "content" block would silently overwrite the others (last one
+     parsed wins). Instead, each page (dashboard.html, decisions.html,
+     history.html, login.html) defines its own uniquely-named top-level
+     template that calls "header" then "footer" around its own body, and
+     handlers execute that page by name. */}}
+{{define "header"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>healarr</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="brand">healarr</span>
+  <nav>
+    <a href="{{.BasePath}}/">Dashboard</a>
+    <a href="{{.BasePath}}/decisions">Decisions</a>
+    <a href="{{.BasePath}}/history">History</a>
+  </nav>
+  {{if .CSRFToken}}
+  <form method="post" action="{{.BasePath}}/logout" class="logout-form">
+    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+    <button type="submit">Log out</button>
+  </form>
+  {{end}}
+</header>
+<main>
+{{if .Flash}}<div class="flash">{{.Flash}}</div>{{end}}
+{{end}}
+
+{{define "footer"}}
+</main>
+</body>
+</html>
+{{end}}
