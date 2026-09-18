@@ -28,51 +28,66 @@ func seededDoneCheck() check.Check {
 }
 
 func runSeededDone(ctx context.Context, d check.Deps) (check.Result, error) {
-	if d.QBit == nil || (d.Sonarr == nil && d.Radarr == nil) {
-		return check.Result{}, check.ErrNotConfigured
-	}
-	torrents, err := d.QBit.Torrents(ctx, "", "")
-	if err != nil {
-		return check.Result{}, fmt.Errorf("qbit torrents: %w", err)
-	}
-	prefs, err := d.QBit.Preferences(ctx)
-	if err != nil {
-		return check.Result{}, fmt.Errorf("qbit preferences: %w", err)
-	}
-	imported, err := importedDownloadIDs(ctx, d, d.Now().Add(-d.Cfg.Checks.ArrHistoryWindow))
+	torrents, err := SeededDone(ctx, d)
 	if err != nil {
 		return check.Result{}, err
 	}
 
 	var findings []check.Finding
 	for _, t := range torrents {
-		if f := seededDoneFinding(d, t, prefs, imported); f != nil {
-			findings = append(findings, *f)
-		}
+		hours := int(t.SeedingTime.Round(time.Hour).Hours())
+		f := d.NewFinding(seededDoneID, "qbit:"+t.Hash, check.SeverityInfo, check.TierNudge,
+			fmt.Sprintf("%s seeded to target (ratio %.2f, %dh) and imported; safe to remove", t.Name, t.Ratio, hours))
+		findings = append(findings, f)
 	}
 	metrics := map[string]float64{"qbit_seeded_done": float64(len(findings))}
 	return check.Result{Findings: findings, Metrics: metrics}, nil
 }
 
-// seededDoneFinding applies the rule to a single torrent.
-func seededDoneFinding(d check.Deps, t qbittorrent.Torrent, prefs qbittorrent.Preferences, imported map[string]bool) *check.Finding {
-	if t.Progress < 1 || t.CompletionOn.IsZero() {
-		return nil
+// SeededDone returns every torrent that has met qBittorrent's own seeding
+// target (ratio or time, from its preferences), has sat seeded for at
+// least Checks.SeededMinAge, and has a confirmed arr import: there is
+// nothing left for it to do. It is the rule shared by the seeded_done
+// check and the cleanup package's seeded-torrent planner; extracting it
+// here changes neither the check's behaviour nor its tests.
+func SeededDone(ctx context.Context, d check.Deps) ([]qbittorrent.Torrent, error) {
+	if d.QBit == nil || (d.Sonarr == nil && d.Radarr == nil) {
+		return nil, check.ErrNotConfigured
 	}
-	if !seededToTarget(t, prefs) {
-		return nil
+	torrents, err := d.QBit.Torrents(ctx, "", "")
+	if err != nil {
+		return nil, fmt.Errorf("qbit torrents: %w", err)
 	}
-	if d.Now().Sub(t.CompletionOn) < d.Cfg.Checks.SeededMinAge {
-		return nil
+	prefs, err := d.QBit.Preferences(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("qbit preferences: %w", err)
 	}
-	if !imported[strings.ToUpper(t.Hash)] {
-		return nil
+	imported, err := importedDownloadIDs(ctx, d, d.Now().Add(-d.Cfg.Checks.ArrHistoryWindow))
+	if err != nil {
+		return nil, err
 	}
 
-	hours := int(t.SeedingTime.Round(time.Hour).Hours())
-	f := d.NewFinding(seededDoneID, "qbit:"+t.Hash, check.SeverityInfo, check.TierNudge,
-		fmt.Sprintf("%s seeded to target (ratio %.2f, %dh) and imported; safe to remove", t.Name, t.Ratio, hours))
-	return &f
+	var done []qbittorrent.Torrent
+	for _, t := range torrents {
+		if seededDoneMatches(d, t, prefs, imported) {
+			done = append(done, t)
+		}
+	}
+	return done, nil
+}
+
+// seededDoneMatches applies the rule to a single torrent.
+func seededDoneMatches(d check.Deps, t qbittorrent.Torrent, prefs qbittorrent.Preferences, imported map[string]bool) bool {
+	if t.Progress < 1 || t.CompletionOn.IsZero() {
+		return false
+	}
+	if !seededToTarget(t, prefs) {
+		return false
+	}
+	if d.Now().Sub(t.CompletionOn) < d.Cfg.Checks.SeededMinAge {
+		return false
+	}
+	return imported[strings.ToUpper(t.Hash)]
 }
 
 // seededToTarget reports whether t has met either of qBittorrent's own

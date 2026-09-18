@@ -70,4 +70,11 @@ type Client interface {
 	DirSize(ctx context.Context, path string, maxDepth int) (int64, error)
 	// ListDir returns path's immediate children, sorted by name.
 	ListDir(ctx context.Context, path string) ([]Entry, error)
+	// Remove deletes path and everything under it. It refuses an empty
+	// path or "/" outright — a defence against a caller-computed path
+	// collapsing to the filesystem root — leaving any further "is this
+	// actually somewhere we're allowed to delete from" policy to the
+	// caller (see internal/cleanup, which checks paths against configured
+	// directory prefixes before ever calling Remove).
+	Remove(ctx context.Context, path string) error
 }

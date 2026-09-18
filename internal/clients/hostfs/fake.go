@@ -13,8 +13,11 @@ type Fake struct {
 	Usages    map[string]Usage
 	Sizes     map[string]int64
 	Entries   map[string][]Entry
-	Calls     []string
-	Err       error
+	// Removed records every path Remove was called with, in call order,
+	// so a test can assert exactly what got deleted.
+	Removed []string
+	Calls   []string
+	Err     error
 }
 
 var _ Client = (*Fake)(nil)
@@ -59,4 +62,14 @@ func (f *Fake) DirSize(_ context.Context, path string, maxDepth int) (int64, err
 // ListDir returns the configured entries for path.
 func (f *Fake) ListDir(_ context.Context, path string) ([]Entry, error) {
 	return f.Entries[path], f.record("ListDir(%s)", path)
+}
+
+// Remove records path in Removed unless Err is set, mirroring OS.Remove's
+// contract without touching a real filesystem.
+func (f *Fake) Remove(_ context.Context, path string) error {
+	if err := f.record("Remove(%s)", path); err != nil {
+		return err
+	}
+	f.Removed = append(f.Removed, path)
+	return nil
 }
