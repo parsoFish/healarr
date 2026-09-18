@@ -155,7 +155,9 @@ func (c *HTTPClient) Heartbeat(ctx context.Context, hb Heartbeat) (Ack, error) {
 // (never retrying) on success, on context cancellation, on ErrUnauthorized
 // (401/403), and on any other 4xx response. It retries on a transport
 // error or a 5xx response, waiting c.backoff(attempt) between attempts;
-// after the final failed attempt it returns ErrPeerUnavailable.
+// after the final failed attempt it returns ErrPeerUnavailable wrapping the
+// last underlying error (via a multi-%w chain), so callers can still
+// errors.As into the original *httpx.APIError or transport error.
 func (c *HTTPClient) doWithRetry(ctx context.Context, fn func(context.Context) error) error {
 	var lastErr error
 	for attempt := 0; attempt <= c.retries; attempt++ {
@@ -182,7 +184,7 @@ func (c *HTTPClient) doWithRetry(ctx context.Context, fn func(context.Context) e
 		}
 		lastErr = err // transport error or 5xx: retryable
 	}
-	return fmt.Errorf("%w: %v", ErrPeerUnavailable, lastErr)
+	return fmt.Errorf("%w: %w", ErrPeerUnavailable, lastErr)
 }
 
 // waitFor blocks for d, or returns ctx's error if ctx is done first.

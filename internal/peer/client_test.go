@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/parsoFish/healarr/internal/clients/httpx"
 	"github.com/parsoFish/healarr/internal/config"
 )
 
@@ -190,6 +192,10 @@ func TestServiceUnavailableThreeTimesReturnsPeerUnavailable(t *testing.T) {
 	if !errors.Is(err, ErrPeerUnavailable) {
 		t.Fatalf("expected ErrPeerUnavailable, got %v", err)
 	}
+	var ae *httpx.APIError
+	if !errors.As(err, &ae) || ae.Status != http.StatusServiceUnavailable {
+		t.Fatalf("expected the underlying *httpx.APIError (503) reachable via errors.As, got %v", err)
+	}
 	if got := attempts.Load(); got != 3 {
 		t.Fatalf("expected exactly 3 attempts (1 + 2 retries), got %d", got)
 	}
@@ -205,6 +211,10 @@ func TestTransportErrorRetriesThenReturnsPeerUnavailable(t *testing.T) {
 	_, err := c.PushReport(context.Background(), ReportEnvelope{})
 	if !errors.Is(err, ErrPeerUnavailable) {
 		t.Fatalf("expected ErrPeerUnavailable, got %v", err)
+	}
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		t.Fatalf("expected the underlying transport error (*url.Error) reachable via errors.As, got %v", err)
 	}
 }
 
