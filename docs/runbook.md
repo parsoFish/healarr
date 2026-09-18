@@ -190,17 +190,21 @@ Unrelated to the daemon, but worth knowing before it shows up in a daemon-driven
 
 Since Phase 4, `healarr agent serve` on the Pi (and only the Pi — ADR-014/015) also serves a
 LAN-only dashboard/decisions/history UI (`internal/web`), mounted at `web.base_path` (default
-`/healarr`) on `web.listen_addr` (default `0.0.0.0:8091`). It requires `secrets.toml`'s
-`web_token`; `agent serve` refuses to start on the Pi without one
-(`"agent serve: pi requires secrets.web_token to serve the web ui"`).
+`/healarr`) on `web.listen_addr` (default `0.0.0.0:8091`). An empty `base_path` (`""`) falls
+back to that same default rather than mounting at the root — set it to `"/"` if you actually
+want the UI at the root. It requires `secrets.toml`'s `web_token`; `agent serve` refuses to
+start on the Pi without one (`"agent serve: pi requires secrets.web_token to serve the web ui"`).
 
 - **Login**: `GET <base>/login?token=<web_token>` checks the token (constant-time compare),
   sets an `HttpOnly`, `SameSite=Strict` session cookie (`healarr_session`) good for 30 days, and
   redirects to the dashboard; `GET <base>/login` with no `token` query param renders a login
-  form instead. **Sessions live only in the daemon's memory** — restarting `agent serve` (a
-  deploy, a crash, a reboot) signs every browser out; there is no session store to persist, by
-  design (ADR-019). A GET without a valid session cookie redirects to `/login`; a POST without
-  one gets a bare 401.
+  form instead. **The token appears in that URL** — shell history, browser history, and any
+  reverse-proxy access log that isn't disabled for it (see `deploy/nginx/healarr.conf.snippet`'s
+  `/healarr/login` block, which disables logging for this reason). A POST-based login is a
+  follow-up, not yet implemented. **Sessions live only in the daemon's memory** — restarting
+  `agent serve` (a deploy, a crash, a reboot) signs every browser out; there is no session store
+  to persist, by design (ADR-019). A GET without a valid session cookie redirects to `/login`; a
+  POST without one gets a bare 401.
 - **CSRF**: every POST (the decisions form, logout) also requires a `csrf` form field, a value
   derived per-session and checked with a constant-time compare — a bookmarked or copy-pasted
   form action never resubmits successfully on its own.
@@ -221,14 +225,16 @@ LAN-only dashboard/decisions/history UI (`internal/web`), mounted at `web.base_p
 
 ## Decisions
 
-`/healarr/decisions` is where staleness candidates get kept or deleted. It lists every open
-`staleness_scan` finding scoring at or above `staleness.watchlist_threshold`, sorted score
-descending, with the title, score, band, the top two scoring components, size, last-watched
-time and Overseerr requester — the same breakdown `healarr staleness score` prints on the CLI —
-and a Keep / Delete button per row.
+`/healarr/decisions` is where staleness candidates get kept or deleted. It lists every open (not
+snoozed) `staleness_scan` finding scoring at or above `staleness.watchlist_threshold`, sorted
+score descending, with the title, score, band, all six scoring components, size, last-watched
+time and Overseerr requester and a Keep / Delete button per row — the CLI's `healarr staleness
+score` prints only the top two components (`TopComponents`), not the same breakdown.
 
 - **Keep** snoozes the entity for `staleness.snooze_days` (default 60) and is never gated by
-  `actions.enabled` — snoozing a finding doesn't touch the media stack.
+  `actions.enabled` — snoozing a finding doesn't touch the media stack. While snoozed, the
+  finding drops off this page and the digest's STALENESS section entirely, reappearing once
+  `staleness.snooze_days` has elapsed.
 - **Delete** deletes the series/movie from Sonarr/Radarr with files and an import-list
   exclusion, best-effort declines any matching Overseerr request, and best-effort sends a
   `qbit_delete` hint to the peer node so its torrent-client bookkeeping gets cleaned up too — but

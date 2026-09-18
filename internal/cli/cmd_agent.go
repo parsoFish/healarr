@@ -169,11 +169,13 @@ func buildWebHandler(deps *Deps, flags *GlobalFlags, cfg config.Config, sec conf
 }
 
 // decisionRunnerAdapter adapts decision.Execute to the web.DecisionRunner
-// contract the web UI's decisions page runs a POST through. A fresh
-// check.Deps is built per call via buildCheckDeps (every client rebuilt
-// from current config/secrets, mirroring how `decide` builds it once per
-// CLI invocation) — never cached across requests, since a long-running
-// daemon must not serve a decision against clients captured at startup.
+// contract the web UI's decisions page runs a POST through. cfg/sec are
+// the startup snapshot (set once when this adapter is constructed, never
+// re-read) — only the HTTP clients are rebuilt per call, via a fresh
+// check.Deps from buildCheckDeps(ctx, r.deps, r.flags, r.cfg, r.sec),
+// mirroring how `decide` builds it once per CLI invocation. Those
+// clients are never cached across requests, since a long-running daemon
+// must not serve a decision against clients captured at startup.
 type decisionRunnerAdapter struct {
 	deps  *Deps
 	flags *GlobalFlags

@@ -124,12 +124,17 @@ location block goes **inside the existing `server {}` block** of simplarr's spli
 **Verify access**:
 
 ```bash
-# Without token → 302 redirect to login
-curl -s -o /dev/null -w '%{http_code}' http://<pi>/healarr/
+# Without a session → 303 redirect to login
+curl -s -o /dev/null -w '%{http_code}' http://<pi>/healarr/            # 303 → /healarr/login
 
-# With token → 200 OK
-curl -s -o /dev/null -w '%{http_code}' http://<pi>/healarr/?token=<web_token>
+# Login reads ?token= (only /login does) → 303 + a session cookie
+curl -si "http://<pi>/healarr/login?token=<web_token>" | head -5       # 303 + Set-Cookie: healarr_session=…
 ```
+
+**The token appears in that URL** (and so in shell history, browser history, and any nginx
+access log that isn't disabled for it) — the snippet above disables `access_log` on
+`/healarr/login` for that reason. A POST-based login, so the token never has to appear in a URL
+at all, is a follow-up, not yet implemented.
 
 The same snippet should be contributed to the simplarr repository as a PR, so other users of the
 stack can pull it in a future simplarr release.
