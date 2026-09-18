@@ -15,6 +15,12 @@ import (
 // NAS never calls the sender").
 var errNoSender = errors.New("email is only configured on the pi node")
 
+// errNoRecipient is returned by `notify test` when neither --to nor
+// [email] to names an address. The Pi has a sender whether or not email.to
+// is set (see defaultSender), so a missing recipient is a configuration
+// error to report, not a reason to quietly do nothing.
+var errNoRecipient = errors.New("no recipient: set [email] to or pass --to")
+
 func newNotifyCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
 	root := &cobra.Command{Use: "notify", Short: "Send notifications"}
 	root.AddCommand(notifyTestCmd(deps, flags))
@@ -37,7 +43,9 @@ func notifyTestCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
 
 // runNotifyTest sends one short test email through this node's sender. A
 // nil sender (errNoSender) means this node was never meant to send mail at
-// all, so nothing is enqueued or attempted. Otherwise, unless --dry-run,
+// all, and no resolvable recipient (errNoRecipient: neither --to nor
+// email.to) means it has nowhere to send this one; either way nothing is
+// enqueued or attempted. Otherwise, unless --dry-run,
 // the message is enqueued in the outbox before it is sent and marked
 // sent/failed afterward, so the outbox reflects every attempt made
 // (mirroring agent.SendDigest); --dry-run sends without touching the store.
@@ -56,6 +64,9 @@ func runNotifyTest(cmd *cobra.Command, deps *Deps, flags *GlobalFlags, to string
 	addr := to
 	if addr == "" {
 		addr = cfg.Email.To
+	}
+	if addr == "" {
+		return errNoRecipient
 	}
 	now := time.Now()
 	subject := fmt.Sprintf("healarr test email from %s", cfg.Node)

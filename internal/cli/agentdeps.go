@@ -73,10 +73,15 @@ func peerClientFor(deps *Deps, cfg config.Config, sec config.Secrets) (peer.Clie
 }
 
 // defaultSender builds the real msmtp sender for cfg, or nil when this
-// node can't send mail: the NAS never calls the sender (constraints.md),
-// and a Pi with no configured recipient has nothing to send to either.
+// node cannot send mail at all: only the Pi ever sends (constraints.md),
+// and it needs both the msmtp binary to hand off to and a From address to
+// send as. The recipient is deliberately not part of that test — it is
+// resolved per send (email.to, or `notify test --to`), so gating the
+// sender on email.to would silently disable `notify test --to` too, and
+// turn a missing recipient into "this node was never meant to mail
+// anyone" instead of the configuration error it is.
 func defaultSender(cfg config.Config) notify.Sender {
-	if cfg.Node == config.NodeNAS || cfg.Email.To == "" {
+	if cfg.Node != config.NodePi || cfg.Email.MsmtpPath == "" || cfg.Email.From == "" {
 		return nil
 	}
 	return notify.NewMsmtpSender(cfg.Email.MsmtpPath, cfg.Email.From)

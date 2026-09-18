@@ -10,6 +10,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/parsoFish/healarr/internal/config"
 	"github.com/parsoFish/healarr/internal/peer"
 	"github.com/parsoFish/healarr/internal/store"
 )
@@ -163,9 +164,19 @@ func (a *Agent) scheduleHeartbeat(ctx context.Context, c *cron.Cron) error {
 }
 
 // scheduleDigest registers the daily digest job, only when this agent can
-// send mail (HasSender — the Pi only; constraints.md).
+// actually deliver one: it needs both a sender (the Pi only;
+// constraints.md) and a recipient, since SendDigest would otherwise hand
+// msmtp an empty address every morning. A Pi missing either says so at
+// Warn — on that node a digest is the point, so its absence is a
+// misconfiguration the operator has to be told about rather than a silent
+// gap in the schedule. On the NAS the same absence is the design, so it
+// passes without comment.
 func (a *Agent) scheduleDigest(ctx context.Context, c *cron.Cron) error {
-	if !a.HasSender() {
+	if !a.HasSender() || a.cfg.Email.To == "" {
+		if a.cfg.Node == config.NodePi {
+			a.logger.Warn("agent: digest disabled: the pi needs both a mail sender and email.to",
+				"has_sender", a.HasSender(), "has_recipient", a.cfg.Email.To != "")
+		}
 		return nil
 	}
 	spec, err := dailyCronSpec(a.cfg.Email.DigestAt)

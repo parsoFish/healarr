@@ -10,14 +10,20 @@ import (
 )
 
 func TestDefaultSender(t *testing.T) {
+	full := config.Email{To: "ops@example.test", MsmtpPath: "/usr/bin/msmtp", From: "healarr@example.test"}
 	cases := []struct {
 		name    string
 		cfg     config.Config
 		wantNil bool
 	}{
-		{"nas node never sends, even with a recipient", config.Config{Node: config.NodeNAS, Email: config.Email{To: "ops@example.test"}}, true},
-		{"pi node with no recipient has nothing to send to", config.Config{Node: config.NodePi, Email: config.Email{To: ""}}, true},
-		{"pi node with a recipient sends", config.Config{Node: config.NodePi, Email: config.Email{To: "ops@example.test", MsmtpPath: "/usr/bin/msmtp", From: "healarr@example.test"}}, false},
+		{"nas node never sends, however configured", config.Config{Node: config.NodeNAS, Email: full}, true},
+		{"pi node with no msmtp_path cannot send", config.Config{Node: config.NodePi, Email: config.Email{To: full.To, From: full.From}}, true},
+		{"pi node with no from address cannot send", config.Config{Node: config.NodePi, Email: config.Email{To: full.To, MsmtpPath: full.MsmtpPath}}, true},
+		// A recipient is resolved per send (email.to, or `notify test --to`),
+		// so an empty email.to must not quietly leave the Pi with no sender —
+		// that would disable `notify test --to` as well as the digest.
+		{"pi node with no recipient still has a sender", config.Config{Node: config.NodePi, Email: config.Email{MsmtpPath: full.MsmtpPath, From: full.From}}, false},
+		{"pi node fully configured sends", config.Config{Node: config.NodePi, Email: full}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

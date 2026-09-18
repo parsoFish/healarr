@@ -452,3 +452,56 @@ func TestScheduleCheckpointJobLogsPruneFailureAndStillCheckpoints(t *testing.T) 
 		t.Fatalf("log = %q, want it to mention the prune error", logBuf.String())
 	}
 }
+
+// TestScheduleDigestDisabledIsWarnedAndSkipped proves a Pi that cannot
+// actually mail a digest says so at Warn and registers no digest entry,
+// rather than scheduling a job that would fail nightly (no sender) or mail
+// nobody (no email.to).
+func TestScheduleDigestDisabledIsWarnedAndSkipped(t *testing.T) {
+	cases := map[string]func(*Options){
+		"sender but no email.to": func(o *Options) {
+			o.Sender = &notify.FakeSender{}
+			o.Cfg.Email.To = ""
+		},
+		"email.to but no sender": func(o *Options) { o.Sender = nil },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			var logBuf strings.Builder
+			a := newScheduleTestAgent(t, func(o *Options) {
+				mutate(o)
+				o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+			})
+
+			c, err := a.Schedule(context.Background())
+			if err != nil {
+				t.Fatalf("Schedule() err = %v", err)
+			}
+			assertEntriesMatchSpecs(t, c, expectedSpecs(t, a.cfg, false, false))
+
+			out := logBuf.String()
+			if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "digest disabled") {
+				t.Fatalf("log = %q, want a WARN naming the disabled digest", out)
+			}
+		})
+	}
+}
+
+// TestScheduleNASWithoutSenderDoesNotWarn proves the NAS's missing digest
+// is the documented arrangement (constraints.md: only the Pi mails), not
+// something to warn about every start-up.
+func TestScheduleNASWithoutSenderDoesNotWarn(t *testing.T) {
+	var logBuf strings.Builder
+	a := newScheduleTestAgent(t, func(o *Options) {
+		o.Cfg = scheduleTestCfg(config.NodeNAS)
+		o.Sender = nil
+		o.Logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+	})
+
+	if _, err := a.Schedule(context.Background()); err != nil {
+		t.Fatalf("Schedule() err = %v", err)
+	}
+	if strings.Contains(logBuf.String(), "digest disabled") {
+		t.Fatalf("log = %q, want no digest warning on the nas", logBuf.String())
+	}
+}

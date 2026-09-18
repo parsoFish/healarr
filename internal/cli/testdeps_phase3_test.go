@@ -12,6 +12,11 @@ import (
 	"github.com/parsoFish/healarr/internal/peer"
 )
 
+// phase3TestRecipient is the email.to every Phase 3 CLI test's config
+// carries, so a test asserting on the address sent to names the same
+// constant the config does.
+const phase3TestRecipient = "ops@example.test"
+
 // phase3Fakes bundles the Phase 3 fakes (peer, sender, and every Options
 // NewAgent was called with) that newPhase3Deps wires on top of the fakes
 // newTestDeps already builds.
@@ -36,6 +41,13 @@ func newPhase3Deps(t *testing.T) (*Deps, *fakes, *phase3Fakes) {
 	t.Helper()
 	deps, fk := newTestDeps()
 	p3 := &phase3Fakes{Peer: &peer.Fake{}, Sender: &notify.FakeSender{}}
+
+	// A Pi with mail wired up: `notify test` resolves its recipient from
+	// email.to unless --to overrides it, so the default config a Phase 3
+	// test runs against has one.
+	deps.Load = func(string) (config.Config, config.Secrets, error) {
+		return config.Config{Node: config.NodePi, Email: config.Email{To: phase3TestRecipient}}, config.Secrets{}, nil
+	}
 
 	deps.PeerClient = func(config.Config, config.Secrets) (peer.Client, error) { return p3.Peer, nil }
 	deps.Sender = func(config.Config) notify.Sender { return p3.Sender }
