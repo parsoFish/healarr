@@ -1,0 +1,20 @@
+[Unit]
+Description=healarr health agent (pi node)
+After=network-online.target docker.service
+Wants=network-online.target
+RequiresMountsFor=/mnt/nas/tv /mnt/nas/movies /mnt/nas/downloads
+
+[Service]
+Type=simple
+User=parso
+ExecStart=/usr/local/bin/healarr agent serve --config /etc/healarr/config.toml
+Restart=on-failure
+RestartSec=10
+Environment=TZ=Australia/Brisbane
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/healarr
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
