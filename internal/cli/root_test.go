@@ -27,3 +27,16 @@ func TestRootHasGlobalFlags(t *testing.T) {
 		}
 	}
 }
+
+// TestRootRegistersCleanupAndDecideCommands proves `cleanup` and `decide`
+// (built by newCleanupCmd/newDecideCmd, previously left unregistered per
+// their own task briefs) are reachable from the real root command tree.
+func TestRootRegistersCleanupAndDecideCommands(t *testing.T) {
+	cmd := NewRootCmd(&Deps{})
+	for _, name := range []string{"cleanup", "decide"} {
+		found, _, err := cmd.Find([]string{name})
+		if err != nil || found.Name() != name {
+			t.Errorf("root command tree missing %q: found=%v err=%v", name, found, err)
+		}
+	}
+}

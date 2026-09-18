@@ -53,6 +53,8 @@ func NewRootCmd(deps *Deps) *cobra.Command {
 		newCheckCmd(deps, flags),
 		newReportCmd(deps, flags),
 		newStalenessCmd(deps, flags),
+		newCleanupCmd(deps, flags),
+		newDecideCmd(deps, flags),
 		newAgentCmd(deps, flags),
 		newNotifyCmd(deps, flags),
 		newPeerCmd(deps, flags),
