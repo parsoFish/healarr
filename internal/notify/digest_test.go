@@ -9,6 +9,43 @@ import (
 	"github.com/parsoFish/healarr/internal/config"
 )
 
+// assertContainsAll fails the test unless out contains every want string.
+func assertContainsAll(t *testing.T, out string, wants ...string) {
+	t.Helper()
+	for _, w := range wants {
+		if !strings.Contains(out, w) {
+			t.Fatalf("expected output to contain %q: %q", w, out)
+		}
+	}
+}
+
+// assertContainsNone fails the test if out contains any of the given strings.
+func assertContainsNone(t *testing.T, out string, unwanted ...string) {
+	t.Helper()
+	for _, u := range unwanted {
+		if strings.Contains(out, u) {
+			t.Fatalf("expected output not to contain %q: %q", u, out)
+		}
+	}
+}
+
+// assertOrder fails the test unless each marker's last occurrence in out
+// appears strictly after the previous marker's.
+func assertOrder(t *testing.T, out string, markers ...string) {
+	t.Helper()
+	prev := -1
+	for _, m := range markers {
+		i := strings.LastIndex(out, m)
+		if i < 0 {
+			t.Fatalf("expected marker %q in output: %q", m, out)
+		}
+		if i <= prev {
+			t.Fatalf("marker %q out of order in output: %q", m, out)
+		}
+		prev = i
+	}
+}
+
 func fixedFinding(id, entity string, sev check.Severity, tier check.Tier, summary, detail string, at time.Time) check.Finding {
 	return check.Finding{
 		CheckID:   id,
@@ -208,5 +245,121 @@ func TestRenderDigestUnknownSeverityRendersAsInfo(t *testing.T) {
 	}
 	if !strings.Contains(out, "INFO") || !strings.Contains(out, "- [mystery] mystery finding") {
 		t.Fatalf("unknown severity not rendered under INFO: %q", out)
+	}
+}
+
+func TestRenderDigestPeerNilRendersNoReportReceived(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{Node: config.NodePi, GeneratedAt: at, ChecksRun: 1}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	if !strings.Contains(out, "PEER (nas)") {
+		t.Fatalf("missing peer block header: %q", out)
+	}
+	if !strings.Contains(out, "peer nas: no report received") {
+		t.Fatalf("missing no-report-received line: %q", out)
+	}
+}
+
+func TestRenderDigestPeerStaleRendersStaleSince(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	staleAt := at.Add(-3 * time.Hour)
+	in := DigestInput{
+		Node:        config.NodeNAS,
+		GeneratedAt: at,
+		ChecksRun:   1,
+		Peer: &PeerSection{
+			Node:        config.NodePi,
+			GeneratedAt: staleAt,
+			StaleSince:  &staleAt,
+		},
+	}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	if !strings.Contains(out, "PEER (pi)") {
+		t.Fatalf("missing peer block header: %q", out)
+	}
+	if !strings.Contains(out, "peer pi stale since 2026-09-18 04:00 UTC") {
+		t.Fatalf("missing stale-since line: %q", out)
+	}
+	if strings.Contains(out, "no report received") {
+		t.Fatalf("stale peer should not claim no report received: %q", out)
+	}
+}
+
+func TestRenderDigestPeerFreshRendersFindingsBySeverity(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{
+		Node:        config.NodePi,
+		GeneratedAt: at,
+		ChecksRun:   3,
+		Peer: &PeerSection{
+			Node:        config.NodeNAS,
+			GeneratedAt: at,
+			ChecksRun:   5,
+			Findings: []check.Finding{
+				fixedFinding("mount_race", "smb1", check.SeverityCritical, check.TierCorrect, "SMB mount flapping", "3 remounts in 5m", at),
+				fixedFinding("qbit_stalled", "t1", check.SeverityWarn, check.TierNudge, "stalled torrent", "", at),
+				fixedFinding("update_available", "radarr", check.SeverityInfo, check.TierObserve, "update available", "v5.2.1", at),
+			},
+		},
+	}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsAll(t, out,
+		"PEER (nas)",
+		"Peer summary: 5 checks run, 0 failed, 3 open findings (1 critical, 1 warn, 1 info)",
+		"- [mount_race] SMB mount flapping", "3 remounts in 5m",
+		"- [qbit_stalled] stalled torrent",
+		"- [update_available] update available", "v5.2.1",
+	)
+	assertOrder(t, out, "CRITICAL", "WARN", "INFO")
+	assertContainsNone(t, out, "no report received", "stale since")
+}
+
+func TestDigestInputSubjectCountsAcrossBothNodes(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{
+		Node:        config.NodePi,
+		GeneratedAt: at,
+		Findings: []check.Finding{
+			fixedFinding("mount_race", "smb1", check.SeverityCritical, check.TierCorrect, "SMB mount flapping", "", at),
+			fixedFinding("wanted_missing", "sonarr", check.SeverityWarn, check.TierNudge, "wanted spike", "", at),
+		},
+		Peer: &PeerSection{
+			Node: config.NodeNAS,
+			Findings: []check.Finding{
+				fixedFinding("qbit_stalled", "t1", check.SeverityCritical, check.TierNudge, "stalled torrent", "", at),
+				fixedFinding("qbit_stalled", "t2", check.SeverityCritical, check.TierNudge, "stalled torrent", "", at),
+				fixedFinding("disk_pressure", "/", check.SeverityWarn, check.TierObserve, "disk pressure", "", at),
+			},
+		},
+	}
+	got := in.Subject()
+	want := "healarr digest — 2026-09-18 — 3 critical, 2 warn"
+	if got != want {
+		t.Fatalf("Subject() = %q, want %q", got, want)
+	}
+}
+
+func TestDigestInputSubjectWithoutPeerCountsOwnOnly(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{
+		Node:        config.NodePi,
+		GeneratedAt: at,
+		Findings: []check.Finding{
+			fixedFinding("mount_race", "smb1", check.SeverityCritical, check.TierCorrect, "SMB mount flapping", "", at),
+		},
+	}
+	got := in.Subject()
+	want := "healarr digest — 2026-09-18 — 1 critical, 0 warn"
+	if got != want {
+		t.Fatalf("Subject() = %q, want %q", got, want)
 	}
 }
