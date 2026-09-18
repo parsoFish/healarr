@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,7 +15,12 @@ import (
 
 	"github.com/parsoFish/healarr/internal/agent"
 	"github.com/parsoFish/healarr/internal/check"
+	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/decision"
+	"github.com/parsoFish/healarr/internal/peer"
+	"github.com/parsoFish/healarr/internal/store"
 	"github.com/parsoFish/healarr/internal/version"
+	"github.com/parsoFish/healarr/internal/web"
 )
 
 // errAgentServeDryRun is returned when `agent serve` is given --dry-run.
@@ -24,6 +30,13 @@ import (
 // job — so honouring --dry-run would mean silently running a daemon that
 // never persists anything, which is worse than refusing to start.
 var errAgentServeDryRun = errors.New("agent serve does not support --dry-run; the daemon is observe-only in this phase")
+
+// errMissingWebToken is returned when `agent serve` runs on the pi (the
+// only node that ever serves the web UI) but secrets.toml has no
+// web_token set. web.New itself refuses an empty token too, but checking
+// it here up front names the missing secret rather than surfacing
+// web.New's generic "token must not be empty" message.
+var errMissingWebToken = errors.New("agent serve: pi requires secrets.web_token to serve the web ui")
 
 func newAgentCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
 	root := &cobra.Command{Use: "agent", Short: "Run the healarr daemon"}
@@ -76,6 +89,12 @@ func runAgentServe(cmd *cobra.Command, deps *Deps, flags *GlobalFlags) (err erro
 		}
 	}()
 
+	logger := slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil))
+	webHandler, webAddr, err := buildWebHandler(deps, flags, cfg, sec, st, peerClient, logger)
+	if err != nil {
+		return fmt.Errorf("agent serve: %w", err)
+	}
+
 	newAgentFn := deps.NewAgent
 	if newAgentFn == nil {
 		newAgentFn = agent.New
@@ -89,10 +108,12 @@ func runAgentServe(cmd *cobra.Command, deps *Deps, flags *GlobalFlags) (err erro
 		Store:     st,
 		Peer:      peerClient,
 		Sender:    senderFor(deps, cfg),
-		Logger:    slog.New(slog.NewTextHandler(cmd.ErrOrStderr(), nil)),
+		Logger:    logger,
 		Now:       time.Now,
 		Version:   version.Version,
 		PeerToken: sec.PeerToken,
+		Web:       webHandler,
+		WebAddr:   webAddr,
 	})
 	if err != nil {
 		return fmt.Errorf("agent serve: %w", err)
@@ -105,4 +126,70 @@ func runAgentServe(cmd *cobra.Command, deps *Deps, flags *GlobalFlags) (err erro
 		err = fmt.Errorf("agent serve: %w", runErr)
 	}
 	return err
+}
+
+// buildWebHandler builds the LAN web UI's http.Handler and listen
+// address for cfg.Node == pi (nil, "", nil on the nas — the web UI is
+// pi-only, per ADR-014/constraints.md). It errors when the pi has no
+// web_token configured (errMissingWebToken) or when st doesn't implement
+// the wider store surfaces web.New/decision.Execute need (web.Store,
+// decision.DecisionStore) — st is the same AgentStoreCloser the agent
+// itself uses (openAgentStore), asserted wider here rather than opened a
+// second time, mirroring cmd_cleanup.go's remediationStore assertion.
+func buildWebHandler(deps *Deps, flags *GlobalFlags, cfg config.Config, sec config.Secrets, st AgentStoreCloser, peerClient peer.Client, logger *slog.Logger) (http.Handler, string, error) {
+	if cfg.Node != config.NodePi {
+		return nil, "", nil
+	}
+	if sec.WebToken == "" {
+		return nil, "", errMissingWebToken
+	}
+
+	webStore, ok := st.(web.Store)
+	if !ok {
+		return nil, "", fmt.Errorf("web: store %T does not implement web.Store", st)
+	}
+	decisionStore, ok := st.(decision.DecisionStore)
+	if !ok {
+		return nil, "", fmt.Errorf("web: store %T does not implement decision.DecisionStore", st)
+	}
+
+	runner := &decisionRunnerAdapter{
+		deps:  deps,
+		flags: flags,
+		cfg:   cfg,
+		sec:   sec,
+		store: decisionStore,
+		peer:  peerClient,
+	}
+	handler, err := web.New(cfg, sec.WebToken, webStore, runner, logger)
+	if err != nil {
+		return nil, "", fmt.Errorf("web: %w", err)
+	}
+	return handler, cfg.Web.ListenAddr, nil
+}
+
+// decisionRunnerAdapter adapts decision.Execute to the web.DecisionRunner
+// contract the web UI's decisions page runs a POST through. A fresh
+// check.Deps is built per call via buildCheckDeps (every client rebuilt
+// from current config/secrets, mirroring how `decide` builds it once per
+// CLI invocation) — never cached across requests, since a long-running
+// daemon must not serve a decision against clients captured at startup.
+type decisionRunnerAdapter struct {
+	deps  *Deps
+	flags *GlobalFlags
+	cfg   config.Config
+	sec   config.Secrets
+	store decision.DecisionStore
+	peer  peer.Client
+}
+
+var _ web.DecisionRunner = (*decisionRunnerAdapter)(nil)
+
+// Execute implements web.DecisionRunner.
+func (r *decisionRunnerAdapter) Execute(ctx context.Context, id int64) (store.Decision, error) {
+	checkDeps, err := buildCheckDeps(ctx, r.deps, r.flags, r.cfg, r.sec)
+	if err != nil {
+		return store.Decision{}, fmt.Errorf("web decision runner: build check deps: %w", err)
+	}
+	return decision.Execute(ctx, decision.Deps{Deps: checkDeps, Store: r.store, Peer: r.peer}, id)
 }

@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -361,5 +362,139 @@ func TestDigestInputSubjectWithoutPeerCountsOwnOnly(t *testing.T) {
 	want := "healarr digest — 2026-09-18 — 1 critical, 0 warn"
 	if got != want {
 		t.Fatalf("Subject() = %q, want %q", got, want)
+	}
+}
+
+// stalenessFinding builds a check.Finding shaped like
+// internal/staleness/check.go's stalenessFinding: severity encodes the
+// C6 band (warn=candidate, info=watchlist) and Data carries score/title/
+// sizeBytes, exactly as a JSON round trip through the store would leave
+// them (float64 scores/sizes, not ints).
+func stalenessFinding(entity, title string, score float64, sizeBytes float64, sev check.Severity) check.Finding {
+	return check.Finding{
+		CheckID:   "staleness_scan",
+		EntityKey: entity,
+		Severity:  sev,
+		Tier:      check.TierEscalate,
+		Summary:   fmt.Sprintf("%s stale", title),
+		Data:      map[string]any{"score": score, "title": title, "sizeBytes": sizeBytes},
+	}
+}
+
+func TestRenderDigestStalenessSectionRendersTopCandidates(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{
+		Node:        config.NodePi,
+		GeneratedAt: at,
+		ChecksRun:   1,
+		Staleness: []check.Finding{
+			stalenessFinding("sonarr:1", "Show A", 88, 5_000_000_000, check.SeverityWarn),
+			stalenessFinding("radarr:2", "Movie B", 55, 1_500_000_000, check.SeverityInfo),
+		},
+	}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsAll(t, out,
+		"STALENESS",
+		"- Show A (score 88, candidate,",
+		"- Movie B (score 55, watchlist,",
+	)
+}
+
+func TestRenderDigestStalenessSectionOmittedWhenEmpty(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{Node: config.NodePi, GeneratedAt: at, ChecksRun: 1}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsNone(t, out, "STALENESS")
+}
+
+func TestRenderDigestStalenessSectionCapsAtTopTen(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	var findings []check.Finding
+	for i := 0; i < 15; i++ {
+		findings = append(findings, stalenessFinding(fmt.Sprintf("sonarr:%d", i), fmt.Sprintf("Show %d", i), float64(90-i), 0, check.SeverityWarn))
+	}
+	in := DigestInput{Node: config.NodePi, GeneratedAt: at, ChecksRun: 1, Staleness: findings}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	if strings.Contains(out, "Show 10") || strings.Contains(out, "Show 14") {
+		t.Fatalf("expected only the first 10 staleness lines, got: %q", out)
+	}
+	if !strings.Contains(out, "Show 0") || !strings.Contains(out, "Show 9") {
+		t.Fatalf("expected the first 10 staleness lines to render, got: %q", out)
+	}
+}
+
+func TestRenderDigestCleanupPlansSectionRenders(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{
+		Node:        config.NodeNAS,
+		GeneratedAt: at,
+		ChecksRun:   1,
+		CleanupPlans: []CleanupSummary{
+			{Kind: "recycle", Items: 3, Bytes: 2_000_000_000},
+			{Kind: "orphans", Items: 0, Bytes: 0},
+		},
+	}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsAll(t, out,
+		"CLEANUP (dry-run plans)",
+		"- recycle: 3 item(s),",
+		"- orphans: 0 item(s),",
+	)
+}
+
+func TestRenderDigestCleanupPlansSectionOmittedWhenEmpty(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	in := DigestInput{Node: config.NodeNAS, GeneratedAt: at, ChecksRun: 1}
+	out, err := RenderDigest(in)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsNone(t, out, "CLEANUP")
+}
+
+func TestRenderDigestPendingDecisionsLine(t *testing.T) {
+	at := time.Date(2026, 9, 18, 7, 0, 0, 0, time.UTC)
+	withPending := DigestInput{Node: config.NodePi, GeneratedAt: at, ChecksRun: 1, PendingDecisions: 4}
+	out, err := RenderDigest(withPending)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	if !strings.Contains(out, "Decisions pending: 4") {
+		t.Fatalf("missing pending decisions line: %q", out)
+	}
+
+	noPending := DigestInput{Node: config.NodePi, GeneratedAt: at, ChecksRun: 1}
+	out2, err := RenderDigest(noPending)
+	if err != nil {
+		t.Fatalf("RenderDigest: %v", err)
+	}
+	assertContainsNone(t, out2, "Decisions pending")
+}
+
+func TestHumanizeBytesFormatsBinaryPrefixes(t *testing.T) {
+	cases := map[int64]string{
+		0:             "0 B",
+		512:           "512 B",
+		2048:          "2.0 KiB",
+		5_000_000:     "4.8 MiB",
+		5_000_000_000: "4.7 GiB",
+		-5:            "0 B",
+	}
+	for n, want := range cases {
+		if got := humanizeBytes(n); got != want {
+			t.Errorf("humanizeBytes(%d) = %q, want %q", n, got, want)
+		}
 	}
 }

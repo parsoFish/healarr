@@ -125,11 +125,19 @@ func (a *Agent) Schedule(ctx context.Context) (*cron.Cron, error) {
 	return c, nil
 }
 
-// scheduleCycles registers the four fixed-cadence check cycles.
+// scheduleCycles registers the four fixed-cadence check cycles. The daily
+// cadence's job additionally plans the night's cleanups after its check
+// cycle runs (runDailyCycleAndCleanupPlanning, cleanupjob.go) — chained
+// inside the same cron entry, per the design ruling, rather than a
+// separate entry that could interleave with it.
 func (a *Agent) scheduleCycles(ctx context.Context, c *cron.Cron) error {
 	for _, cc := range cycleCadences() {
 		cadence := cc.cadence
-		if _, err := c.AddFunc(cc.spec, func() { a.runScheduledCycle(ctx, cadence) }); err != nil {
+		job := func() { a.runScheduledCycle(ctx, cadence) }
+		if cc.spec == dailyCycleSpec {
+			job = func() { a.runDailyCycleAndCleanupPlanning(ctx, cadence) }
+		}
+		if _, err := c.AddFunc(cc.spec, job); err != nil {
 			return fmt.Errorf("agent: schedule: cycle %s: %w", cc.spec, err)
 		}
 	}

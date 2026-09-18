@@ -41,6 +41,12 @@ type Peer struct {
 type Web struct {
 	ListenAddr string `toml:"listen_addr"`
 	BasePath   string `toml:"base_path"`
+	// PublicURL is the digest email's BaseURL (e.g.
+	// "http://192.0.2.10/healarr"): the LAN address an operator's mail
+	// client can actually reach, which need not equal ListenAddr (a bind
+	// address such as "0.0.0.0:8091" isn't a URL a browser can open).
+	// "" (the default) omits the digest's "Decisions:" link entirely.
+	PublicURL string `toml:"public_url"`
 }
 
 // Email configures outbound mail via msmtp.

@@ -40,6 +40,21 @@ Skipped (not configured): {{.SkippedList}}
 {{if .BaseURL}}
 Decisions: {{.BaseURL}}/decisions
 {{end -}}
+{{if .PendingDecisions}}
+Decisions pending: {{.PendingDecisions}}
+{{end -}}
+{{if .Staleness}}
+STALENESS
+{{range .Staleness -}}
+- {{.Title}} (score {{.Score}}, {{.Band}}, {{.Size}})
+{{end -}}
+{{end -}}
+{{if .CleanupPlans}}
+CLEANUP (dry-run plans)
+{{range .CleanupPlans -}}
+- {{.Kind}}: {{.Items}} item(s), {{.Bytes}}
+{{end -}}
+{{end -}}
 
 PEER ({{.Peer.Node}})
 {{if .Peer.Unavailable}}

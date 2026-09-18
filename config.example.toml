@@ -27,6 +27,7 @@ peer_url = "http://192.0.2.10:8090"
 [web]
 listen_addr = "0.0.0.0:8091"
 base_path = "/healarr"
+# public_url = "http://192.0.2.10/healarr"   # LAN address for the digest email's "Decisions:" link; "" omits it
 
 [email]
 to = "you@example.com"

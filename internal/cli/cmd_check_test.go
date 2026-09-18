@@ -13,7 +13,9 @@ import (
 	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/config"
+	"github.com/parsoFish/healarr/internal/decision"
 	"github.com/parsoFish/healarr/internal/store"
+	"github.com/parsoFish/healarr/internal/web"
 )
 
 // storePeerMsgCall is one SavePeerMessage invocation FakeStore recorded.
@@ -89,11 +91,62 @@ type FakeStore struct {
 	Remediations         []store.Remediation
 	RecordRemediationErr error
 	nextRemediationID    int64
+
+	// Phase 4 Task 7 (web decisions wiring for `agent serve` on the pi)
+	// additions: FakeStore also needs to satisfy web.Store and
+	// decision.DecisionStore so `agent serve`'s runtime type assertions
+	// (see cmd_agent.go's buildWebHandler) succeed against it in tests.
+	// Their canned behaviour is exercised by internal/web's and
+	// internal/decision's own tests; here they only need to compile and
+	// return harmless, configurable defaults.
+	CreateDecisionID    int64
+	CreateDecisionErr   error
+	CreateDecisionCalls []storeCreateDecisionCall
+
+	PendingDecisionsResult []store.Decision
+	PendingDecisionsErr    error
+
+	DecisionsByID map[int64]store.Decision
+
+	MarkDecisionErr   error
+	MarkDecisionCalls []storeMarkDecisionCall
+
+	SnoozeEntityErr   error
+	SnoozeEntityCalls []storeSnoozeEntityCall
+
+	RecentRemediationsResult []store.Remediation
+	RecentRemediationsErr    error
+
+	FindingHistoryResult []store.StoredFinding
+	FindingHistoryErr    error
 }
 
 var _ StoreAPI = (*FakeStore)(nil)
 var _ agent.Store = (*FakeStore)(nil)
 var _ AgentStoreCloser = (*FakeStore)(nil)
+var _ web.Store = (*FakeStore)(nil)
+var _ decision.DecisionStore = (*FakeStore)(nil)
+
+// storeCreateDecisionCall is one CreateDecision invocation FakeStore
+// recorded.
+type storeCreateDecisionCall struct {
+	EntityKey, Kind string
+	At              time.Time
+}
+
+// storeMarkDecisionCall is one MarkDecision invocation FakeStore recorded.
+type storeMarkDecisionCall struct {
+	ID     int64
+	Status string
+	At     time.Time
+	Cause  error
+}
+
+// storeSnoozeEntityCall is one SnoozeEntity invocation FakeStore recorded.
+type storeSnoozeEntityCall struct {
+	EntityKey string
+	Until     time.Time
+}
 
 func (f *FakeStore) SaveReport(_ context.Context, rep check.Report) (int64, store.UpsertSummary, error) {
 	if f.SaveErr != nil {
@@ -183,6 +236,57 @@ func (f *FakeStore) RecordRemediation(_ context.Context, r store.Remediation) (i
 	}
 	f.nextRemediationID++
 	return f.nextRemediationID, nil
+}
+
+// CreateDecision records the call and returns CreateDecisionID/Err.
+func (f *FakeStore) CreateDecision(_ context.Context, entityKey, kind string, at time.Time) (int64, error) {
+	f.CreateDecisionCalls = append(f.CreateDecisionCalls, storeCreateDecisionCall{EntityKey: entityKey, Kind: kind, At: at})
+	if f.CreateDecisionErr != nil {
+		return 0, f.CreateDecisionErr
+	}
+	return f.CreateDecisionID, nil
+}
+
+// PendingDecisions returns the canned PendingDecisionsResult/Err.
+func (f *FakeStore) PendingDecisions(context.Context) ([]store.Decision, error) {
+	if f.PendingDecisionsErr != nil {
+		return nil, f.PendingDecisionsErr
+	}
+	return f.PendingDecisionsResult, nil
+}
+
+// DecisionByID looks id up in DecisionsByID.
+func (f *FakeStore) DecisionByID(_ context.Context, id int64) (store.Decision, bool, error) {
+	d, ok := f.DecisionsByID[id]
+	return d, ok, nil
+}
+
+// MarkDecision records the call and returns MarkDecisionErr.
+func (f *FakeStore) MarkDecision(_ context.Context, id int64, status string, at time.Time, cause error) error {
+	f.MarkDecisionCalls = append(f.MarkDecisionCalls, storeMarkDecisionCall{ID: id, Status: status, At: at, Cause: cause})
+	return f.MarkDecisionErr
+}
+
+// SnoozeEntity records the call and returns SnoozeEntityErr.
+func (f *FakeStore) SnoozeEntity(_ context.Context, entityKey string, until time.Time) error {
+	f.SnoozeEntityCalls = append(f.SnoozeEntityCalls, storeSnoozeEntityCall{EntityKey: entityKey, Until: until})
+	return f.SnoozeEntityErr
+}
+
+// RecentRemediations returns the canned RecentRemediationsResult/Err.
+func (f *FakeStore) RecentRemediations(context.Context, time.Time) ([]store.Remediation, error) {
+	if f.RecentRemediationsErr != nil {
+		return nil, f.RecentRemediationsErr
+	}
+	return f.RecentRemediationsResult, nil
+}
+
+// FindingHistory returns the canned FindingHistoryResult/Err.
+func (f *FakeStore) FindingHistory(context.Context, config.Node, time.Time, int) ([]store.StoredFinding, error) {
+	if f.FindingHistoryErr != nil {
+		return nil, f.FindingHistoryErr
+	}
+	return f.FindingHistoryResult, nil
 }
 
 func TestCheckListShowsEveryRegisteredCheck(t *testing.T) {

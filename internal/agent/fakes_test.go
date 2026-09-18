@@ -78,6 +78,13 @@ type fakeStore struct {
 	Remediations         []store.Remediation
 	nextRemediationID    int64
 
+	// Phase 4 Task 7 (digest enrichment) additions.
+	RecentRemediationsResult []store.Remediation
+	RecentRemediationsErr    error
+
+	PendingDecisionsResult []store.Decision
+	PendingDecisionsErr    error
+
 	// Ops records, in order, the store operations a scheduled job
 	// performed, so a test can prove the nightly job prunes *before* it
 	// checkpoints rather than merely that both happened.
@@ -169,6 +176,22 @@ func (f *fakeStore) RecordRemediation(_ context.Context, r store.Remediation) (i
 	}
 	f.nextRemediationID++
 	return f.nextRemediationID, nil
+}
+
+// RecentRemediations returns the canned RecentRemediationsResult/Err.
+func (f *fakeStore) RecentRemediations(_ context.Context, _ time.Time) ([]store.Remediation, error) {
+	if f.RecentRemediationsErr != nil {
+		return nil, f.RecentRemediationsErr
+	}
+	return f.RecentRemediationsResult, nil
+}
+
+// PendingDecisions returns the canned PendingDecisionsResult/Err.
+func (f *fakeStore) PendingDecisions(_ context.Context) ([]store.Decision, error) {
+	if f.PendingDecisionsErr != nil {
+		return nil, f.PendingDecisionsErr
+	}
+	return f.PendingDecisionsResult, nil
 }
 
 // fakeDeps returns a Deps-building func for Options.Deps that always

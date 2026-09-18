@@ -8,6 +8,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/parsoFish/healarr/internal/peer"
+	"github.com/parsoFish/healarr/internal/web"
 )
 
 // ErrMissingPeerToken is returned by Run when cfg.Peer.ListenAddr configures
@@ -50,22 +51,23 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("agent: run: %w", err)
 	}
 
-	serverErrCh, err := a.startPeerServer(runCtx)
+	peerErrCh, err := a.startPeerServer(runCtx)
 	if err != nil {
 		return fmt.Errorf("agent: run: %w", err)
 	}
+	webErrCh := a.startWebServer(runCtx)
 
 	if _, _, err := a.RunCycle(runCtx, initialCycleCadence); err != nil {
 		a.logger.Error("agent: run: initial cycle failed", "error", err)
 	}
 
 	sched.Start()
-	serverErr := a.awaitShutdownOrServerFailure(ctx, serverErrCh)
+	serverErr := a.awaitShutdownOrServerFailure(ctx, peerErrCh, webErrCh)
 	cancelJobs()
 	<-sched.Stop().Done()
 
 	if serverErr != nil {
-		return fmt.Errorf("agent: run: peer server: %w", serverErr)
+		return fmt.Errorf("agent: run: server: %w", serverErr)
 	}
 	return nil
 }
@@ -94,29 +96,39 @@ func (a *Agent) logStartup(sched *cron.Cron) error {
 		"digest_enabled", a.digestEnabled(),
 		"digest_at", a.cfg.Email.DigestAt,
 		"checkpoint_at", a.cfg.Agent.CheckpointAt,
+		"web_enabled", a.web != nil,
+		"web_listen_addr", a.webAddr,
 		"cron_entries", len(sched.Entries()),
 	)
 	return nil
 }
 
 // awaitShutdownOrServerFailure blocks until ctx is done (the normal
-// shutdown trigger) or, when a peer server is running, until it exits
-// early with an error (e.g. a bind failure) — whichever happens first. A
-// server error that arrives before ctx is done is returned immediately,
-// without waiting for ctx, so a broken listener is never silently ignored
-// until shutdown. When ctx fires first, it then waits for the server's own
-// (ctx-triggered) graceful shutdown to finish and returns that result
-// instead. serverErrCh == nil (no listener configured) just waits on ctx.
-func (a *Agent) awaitShutdownOrServerFailure(ctx context.Context, serverErrCh <-chan error) error {
+// shutdown trigger) or either server exits early with an error (e.g. a
+// bind failure) — whichever happens first. A server error that arrives
+// before ctx is done is returned immediately, without waiting for ctx or
+// the other server, so a broken listener is never silently ignored until
+// shutdown. When ctx fires first, it then waits for both servers' own
+// (ctx-triggered) graceful shutdown to finish and joins their results. A
+// A nil channel (no listener configured) never selects and waits as nil.
+func (a *Agent) awaitShutdownOrServerFailure(ctx context.Context, peerErrCh, webErrCh <-chan error) error {
 	select {
-	case err := <-serverErrCh: // never selects while serverErrCh == nil
+	case err := <-peerErrCh: // never selects while peerErrCh == nil
+		return err
+	case err := <-webErrCh: // never selects while webErrCh == nil
 		return err
 	case <-ctx.Done():
-		if serverErrCh == nil {
-			return nil
-		}
-		return <-serverErrCh
+		return errors.Join(waitServerErr(peerErrCh), waitServerErr(webErrCh))
 	}
+}
+
+// waitServerErr waits for ch's single buffered result, or returns nil
+// immediately when ch is nil (that server was never started).
+func waitServerErr(ch <-chan error) error {
+	if ch == nil {
+		return nil
+	}
+	return <-ch
 }
 
 // startPeerServer starts the peer HTTP server (this node's peer.Handler,
@@ -140,4 +152,27 @@ func (a *Agent) startPeerServer(ctx context.Context) (<-chan error, error) {
 		errCh <- peer.ListenAndServe(ctx, a.cfg.Peer.ListenAddr, handler)
 	}()
 	return errCh, nil
+}
+
+// startWebServer starts the LAN web UI (Options.Web, bound to
+// Options.WebAddr) in its own goroutine when a.web is non-nil — nil on
+// the NAS, or on a Pi that couldn't build the handler before Run (see
+// internal/cli/cmd_agent.go, which builds it and never hands Run a
+// non-nil Web without a valid WebAddr) — returning a channel that
+// receives its exit error once ctx is done and it has shut down. It
+// returns a nil channel when a.web is nil, so Run can skip waiting on it
+// entirely, mirroring startPeerServer. Unlike startPeerServer, there is no
+// handler to build here (Options.Web already is one) and so no error
+// return: the only way this can fail is the bind itself, which — exactly
+// like the peer server — surfaces asynchronously on the returned channel.
+func (a *Agent) startWebServer(ctx context.Context) <-chan error {
+	if a.web == nil {
+		return nil
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- web.ListenAndServe(ctx, a.webAddr, a.web)
+	}()
+	return errCh
 }

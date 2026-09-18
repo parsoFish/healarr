@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/notify"
@@ -16,6 +19,27 @@ import (
 // (scheduleDigest) ever calls SendDigest, so this only fires on a
 // misconfigured or direct call.
 var ErrNoSender = errors.New("agent: no sender configured")
+
+// stalenessScanCheckID is the check id staleness_scan findings carry
+// (internal/staleness/check.go); this package has no dependency on that
+// package (only on the check.Finding it produces), so it keeps its own
+// copy of the literal, mirroring internal/web's.
+const stalenessScanCheckID = "staleness_scan"
+
+// digestCleanupWindow bounds how far back SendDigest looks into
+// remediations for the CLEANUP section's "latest plan per kind" —
+// wide enough to always cover last night's 00:10 cleanup-planning job
+// (cleanupjob.go), whatever time the digest itself sends at.
+const digestCleanupWindow = 24 * time.Hour
+
+// cleanupPlannedAction/cleanupActionPrefix identify a cleanup dry-run
+// plan's remediations row (cleanupjob.go and internal/cli/cmd_cleanup.go
+// both record these): Action starts with "cleanup:<kind>" and Status is
+// "planned".
+const (
+	cleanupActionPrefix  = "cleanup:"
+	cleanupPlannedStatus = "planned"
+)
 
 // SendDigest builds the daily digest from this node's own latest report
 // and open findings plus the peer's (peer section built by
@@ -43,8 +67,22 @@ func (a *Agent) SendDigest(ctx context.Context) (int64, error) {
 	}
 
 	now := a.now()
-	// BaseURL is left empty: Phase 4 adds the web UI's URL to the digest.
-	input := notify.BuildDigest(a.cfg.Node, now, own, toFindings(ownFindings), peerSection, "")
+	ownFindingList := toFindings(ownFindings)
+
+	cleanupPlans, err := a.recentCleanupPlans(ctx, now)
+	if err != nil {
+		return 0, fmt.Errorf("agent: send digest: recent cleanup plans: %w", err)
+	}
+	pending, err := a.store.PendingDecisions(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("agent: send digest: pending decisions: %w", err)
+	}
+
+	input := notify.BuildDigest(a.cfg.Node, now, own, ownFindingList, peerSection, a.cfg.Web.PublicURL,
+		notify.WithStaleness(collectStalenessFindings(ownFindingList, peerSection)),
+		notify.WithCleanupPlans(cleanupPlans),
+		notify.WithPendingDecisions(len(pending)),
+	)
 	body, err := notify.RenderDigest(input)
 	if err != nil {
 		return 0, fmt.Errorf("agent: send digest: render: %w", err)
@@ -120,4 +158,86 @@ func toFindings(stored []store.StoredFinding) []check.Finding {
 		out = append(out, sf.Finding)
 	}
 	return out
+}
+
+// collectStalenessFindings gathers every open staleness_scan finding
+// across both nodes — own (already fetched for the digest body) and the
+// peer's (from peerSection, when its channel has ever reported one) — and
+// sorts them by Data["score"] descending, so the digest's STALENESS
+// section highlights the most urgent candidates first. Neither own nor
+// peerSection is mutated: a fresh slice is built and sorted, never
+// resliced in place.
+func collectStalenessFindings(own []check.Finding, peerSection *notify.PeerSection) []check.Finding {
+	out := make([]check.Finding, 0, len(own))
+	for _, f := range own {
+		if f.CheckID == stalenessScanCheckID {
+			out = append(out, f)
+		}
+	}
+	if peerSection != nil {
+		for _, f := range peerSection.Findings {
+			if f.CheckID == stalenessScanCheckID {
+				out = append(out, f)
+			}
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return findingScore(out[i]) > findingScore(out[j]) })
+	return out
+}
+
+// findingScore reads a staleness_scan finding's Data["score"] (a float64,
+// per internal/staleness/check.go's stalenessFinding) defensively: a
+// missing or wrong-shaped value sorts as 0 rather than erroring — Data
+// crossed a JSON round trip through the store, so this is a real
+// boundary, mirroring internal/web's own defensive Data readers.
+func findingScore(f check.Finding) float64 {
+	v, _ := f.Data["score"].(float64)
+	return v
+}
+
+// recentCleanupPlans summarises the latest dry-run plan per cleanup kind
+// recorded within digestCleanupWindow, for the digest's "CLEANUP
+// (dry-run plans)" section.
+func (a *Agent) recentCleanupPlans(ctx context.Context, now time.Time) ([]notify.CleanupSummary, error) {
+	remediations, err := a.store.RecentRemediations(ctx, now.Add(-digestCleanupWindow))
+	if err != nil {
+		return nil, err
+	}
+	return cleanupSummariesFromRemediations(remediations), nil
+}
+
+// cleanupSummariesFromRemediations picks out every "cleanup:<kind>"
+// remediations row still in status "planned" and keeps only the latest
+// one per kind. remediations is assumed newest-first (as
+// store.RecentRemediations orders it), so the first "planned" row seen
+// for a kind is its latest; earlier (older) rows for the same kind are
+// skipped.
+func cleanupSummariesFromRemediations(remediations []store.Remediation) []notify.CleanupSummary {
+	seen := make(map[string]bool)
+	var out []notify.CleanupSummary
+	for _, r := range remediations {
+		if r.Status != cleanupPlannedStatus || !strings.HasPrefix(r.Action, cleanupActionPrefix) {
+			continue
+		}
+		kind := strings.TrimPrefix(r.Action, cleanupActionPrefix)
+		if seen[kind] {
+			continue
+		}
+		seen[kind] = true
+		items, bytes := parseCleanupPlanDetail(r.Detail)
+		out = append(out, notify.CleanupSummary{Kind: kind, Items: items, Bytes: bytes})
+	}
+	return out
+}
+
+// parseCleanupPlanDetail extracts the item/byte counts cleanupjob.go's
+// planOneDailyCleanup formats into a remediations row's Detail ("<n>
+// items, <bytes> bytes"). A Detail that doesn't match that exact shape —
+// e.g. an older-format row internal/cli/cmd_cleanup.go recorded before
+// this format existed — yields 0, 0 rather than an error: the kind and
+// the fact that a plan exists still render correctly, only the counts
+// are unavailable.
+func parseCleanupPlanDetail(detail string) (items int, bytes int64) {
+	_, _ = fmt.Sscanf(detail, "%d items, %d bytes", &items, &bytes)
+	return items, bytes
 }
