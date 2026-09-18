@@ -64,6 +64,20 @@ func (s *Store) Close() error {
 	return nil
 }
 
+// Checkpoint runs a WAL checkpoint that blocks until every reader has
+// caught up and then truncates the WAL file back to empty (spec C3's
+// nightly checkpoint job, which keeps the WAL from growing unbounded on
+// the Pi's SD card). It is safe to call repeatedly, including on a store
+// with no pending WAL frames.
+func (s *Store) Checkpoint(ctx context.Context) error {
+	var busy, log, checkpointed int
+	row := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	if err := row.Scan(&busy, &log, &checkpointed); err != nil {
+		return fmt.Errorf("store: checkpoint: %w", err)
+	}
+	return nil
+}
+
 // SchemaVersion returns the applied migration number.
 func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	var v int

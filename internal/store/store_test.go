@@ -114,6 +114,30 @@ func TestOpenFindingsErrorsOnClosedStore(t *testing.T) {
 	}
 }
 
+func TestCheckpointSucceedsAndIsIdempotent(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+
+	rep := check.Report{Node: config.NodePi, GeneratedAt: time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)}
+	if _, _, err := s.SaveReport(ctx, rep); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Checkpoint(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Checkpoint(ctx); err != nil {
+		t.Fatalf("second checkpoint: %v", err)
+	}
+}
+
+func TestCheckpointErrorsOnClosedStore(t *testing.T) {
+	s := closedStore(t)
+	if err := s.Checkpoint(context.Background()); err == nil {
+		t.Fatal("expected error from a closed store")
+	}
+}
+
 func TestMigrationVersionRejectsBadNames(t *testing.T) {
 	cases := []string{"noUnderscore.sql", "abc_init.sql"}
 	for _, name := range cases {
