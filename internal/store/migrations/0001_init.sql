@@ -17,8 +17,10 @@ CREATE INDEX findings_node_status ON findings (node, status);
 CREATE TABLE remediations (id INTEGER PRIMARY KEY, finding_id INTEGER REFERENCES findings(id), node TEXT NOT NULL,
   action TEXT NOT NULL, tier TEXT NOT NULL, dry_run INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL,
   detail TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, finished_at TEXT);
+CREATE INDEX remediations_created ON remediations (created_at DESC);
 CREATE TABLE decisions (id INTEGER PRIMARY KEY, entity_key TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
   snooze_until TEXT, requested_at TEXT NOT NULL, executed_at TEXT, error TEXT NOT NULL DEFAULT '');
+CREATE INDEX decisions_status ON decisions (status, requested_at DESC);
 CREATE TABLE peer_messages (id INTEGER PRIMARY KEY, direction TEXT NOT NULL, kind TEXT NOT NULL, peer TEXT NOT NULL,
   payload TEXT NOT NULL, received_at TEXT NOT NULL);
 CREATE INDEX peer_messages_lookup ON peer_messages (peer, kind, direction, received_at DESC);
