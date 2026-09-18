@@ -14,15 +14,15 @@ import (
 // to be from this node itself — a peer must never report as us.
 var ErrOwnNodeReport = errors.New("agent: peer report claims own node")
 
-// PeerHandler adapts a to the peer.Handler contract that internal/peer's
-// Task 4 server defines (ReceiveReport, LatestOwnReport, ReceiveDecision,
-// ReceiveHeartbeat below give *Agent that exact method set). That
-// package's server.go isn't committed yet as this is written, so the
-// return type here is *Agent rather than the literal peer.Handler type;
-// Go interface satisfaction is structural, so once peer.Handler lands,
-// any caller that accepts it accepts this same value with no further
-// change on either side.
-func (a *Agent) PeerHandler() *Agent { return a }
+// PeerHandler adapts a to the peer.Handler contract from internal/peer's
+// Task 4 server: ReceiveReport, LatestOwnReport, ReceiveDecision and
+// ReceiveHeartbeat below give *Agent that exact method set.
+func (a *Agent) PeerHandler() peer.Handler { return a }
+
+// peerHandlerSatisfied is a compile-time assertion that *Agent's method
+// set actually matches peer.Handler (belt-and-suspenders alongside
+// PeerHandler's return type above).
+var _ peer.Handler = (*Agent)(nil)
 
 // ReceiveReport stores env's report as the peer's report — env.Node is
 // authoritative for which node it came from, never the report's own Node
