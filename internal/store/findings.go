@@ -24,7 +24,7 @@ type StoredFinding struct {
 
 // upsertFindings applies the dedup rule inside rep's SaveReport transaction:
 //  1. each finding in rep.Findings either updates a matching open/snoozed
-//     row (same check_id+entity_key) or inserts a new one;
+//     row (same node+check_id+entity_key) or inserts a new one;
 //  2. every check id in rep.Ran (successful checks only) resolves any open
 //     finding for (node, check_id) whose entity_key wasn't seen this run.
 func upsertFindings(ctx context.Context, tx *sql.Tx, rep check.Report) (UpsertSummary, error) {
@@ -37,7 +37,7 @@ func upsertFindings(ctx context.Context, tx *sql.Tx, rep check.Report) (UpsertSu
 		}
 		seenKeys[f.CheckID][f.EntityKey] = struct{}{}
 
-		updated, err := updateOpenFinding(ctx, tx, f)
+		updated, err := updateOpenFinding(ctx, tx, f, rep.GeneratedAt)
 		if err != nil {
 			return UpsertSummary{}, err
 		}
@@ -62,7 +62,7 @@ func upsertFindings(ctx context.Context, tx *sql.Tx, rep check.Report) (UpsertSu
 	return summary, nil
 }
 
-func updateOpenFinding(ctx context.Context, tx *sql.Tx, f check.Finding) (bool, error) {
+func updateOpenFinding(ctx context.Context, tx *sql.Tx, f check.Finding, generatedAt time.Time) (bool, error) {
 	dataJSON, err := toJSONOrDefault(f.Data, "{}")
 	if err != nil {
 		return false, fmt.Errorf("store: marshal finding %s data: %w", f.Key(), err)
@@ -71,9 +71,9 @@ func updateOpenFinding(ctx context.Context, tx *sql.Tx, f check.Finding) (bool, 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE findings
 		SET last_seen = ?, seen_count = seen_count + 1, severity = ?, summary = ?, detail = ?, data = ?
-		WHERE check_id = ? AND entity_key = ? AND status IN ('open', 'snoozed')`,
-		formatTime(f.LastSeen), string(f.Severity), f.Summary, f.Detail, dataJSON,
-		f.CheckID, f.EntityKey,
+		WHERE node = ? AND check_id = ? AND entity_key = ? AND status IN ('open', 'snoozed')`,
+		formatTime(generatedAt), string(f.Severity), f.Summary, f.Detail, dataJSON,
+		string(f.Node), f.CheckID, f.EntityKey,
 	)
 	if err != nil {
 		return false, fmt.Errorf("store: update finding %s: %w", f.Key(), err)

@@ -12,7 +12,7 @@ CREATE TABLE findings (
   data TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'open',
   first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, resolved_at TEXT, snooze_until TEXT,
   seen_count INTEGER NOT NULL DEFAULT 1);
-CREATE UNIQUE INDEX findings_open_key ON findings (check_id, entity_key) WHERE status IN ('open','snoozed');
+CREATE UNIQUE INDEX findings_open_key ON findings (node, check_id, entity_key) WHERE status IN ('open','snoozed');
 CREATE INDEX findings_node_status ON findings (node, status);
 CREATE TABLE remediations (id INTEGER PRIMARY KEY, finding_id INTEGER REFERENCES findings(id), node TEXT NOT NULL,
   action TEXT NOT NULL, tier TEXT NOT NULL, dry_run INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL,

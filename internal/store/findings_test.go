@@ -99,7 +99,10 @@ func TestSaveReportDedupsAndResolves(t *testing.T) {
 		Ran:         []string{"a"},
 		Errors:      []check.CheckError{{CheckID: "b", Error: "x"}},
 		Findings: []check.Finding{
-			f("a", "k1", check.SeverityCritical, t1),
+			// The finding's own LastSeen (t1+1s) deliberately differs from
+			// rep.GeneratedAt (t1): the stored last_seen must be stamped
+			// from the report time, not the finding's own field.
+			f("a", "k1", check.SeverityCritical, t1.Add(time.Second)),
 		},
 	}
 	mustSaveReport(t, s, r2, UpsertSummary{Updated: 1})
@@ -125,6 +128,53 @@ func TestSaveReportDedupsAndResolves(t *testing.T) {
 	rep := mustLatestReport(t, s, config.NodePi)
 	if !rep.GeneratedAt.Equal(r3.GeneratedAt) {
 		t.Fatalf("LatestReport.GeneratedAt = %v, want %v", rep.GeneratedAt, r3.GeneratedAt)
+	}
+}
+
+// TestSaveReportDedupIsScopedByNode guards against the dedup/resolve match
+// collapsing across nodes: two reports for different nodes carrying the
+// same check_id+entity_key must produce two independent open rows, and
+// resolving on one node must never touch the other node's row.
+func TestSaveReportDedupIsScopedByNode(t *testing.T) {
+	s := openTemp(t)
+	t0 := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)
+
+	mkFinding := func(node config.Node) check.Finding {
+		return check.Finding{
+			CheckID:   "a",
+			Node:      node,
+			EntityKey: "k1",
+			Severity:  check.SeverityWarn,
+			Tier:      check.TierObserve,
+			Summary:   "s",
+			FirstSeen: t0,
+			LastSeen:  t0,
+		}
+	}
+
+	piReport := check.Report{Node: config.NodePi, GeneratedAt: t0, Ran: []string{"a"}, Findings: []check.Finding{mkFinding(config.NodePi)}}
+	mustSaveReport(t, s, piReport, UpsertSummary{New: 1})
+
+	nasReport := check.Report{Node: config.NodeNAS, GeneratedAt: t0, Ran: []string{"a"}, Findings: []check.Finding{mkFinding(config.NodeNAS)}}
+	mustSaveReport(t, s, nasReport, UpsertSummary{New: 1})
+
+	piOpen := mustOpenFindings(t, s, config.NodePi)
+	nasOpen := mustOpenFindings(t, s, config.NodeNAS)
+	if len(piOpen) != 1 || len(nasOpen) != 1 {
+		t.Fatalf("pi open = %d, nas open = %d, want 1 each", len(piOpen), len(nasOpen))
+	}
+
+	t1 := t0.Add(time.Hour)
+	resolvePi := check.Report{Node: config.NodePi, GeneratedAt: t1, Ran: []string{"a"}}
+	mustSaveReport(t, s, resolvePi, UpsertSummary{Resolved: 1})
+
+	piOpen = mustOpenFindings(t, s, config.NodePi)
+	nasOpen = mustOpenFindings(t, s, config.NodeNAS)
+	if len(piOpen) != 0 {
+		t.Fatalf("pi open after resolve = %d, want 0: %+v", len(piOpen), piOpen)
+	}
+	if len(nasOpen) != 1 {
+		t.Fatalf("nas open after pi's resolve = %d, want 1 (nas must be unaffected)", len(nasOpen))
 	}
 }
 
