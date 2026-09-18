@@ -334,3 +334,36 @@ func TestDefaultBackoffScheduleMatchesDesign(t *testing.T) {
 		t.Fatalf("attempt 2: expected 1s, got %v", got)
 	}
 }
+
+// TestPerRequestTimeoutRetriesThenReturnsPeerUnavailable proves a
+// per-attempt timeout (http.Client.Timeout, not the caller's context) is
+// treated as the transport failure it is: retried like any other, and
+// classified as ErrPeerUnavailable once the retries are exhausted. The
+// caller's context stays live throughout, so nothing here is a
+// cancellation.
+func TestPerRequestTimeoutRetriesThenReturnsPeerUnavailable(t *testing.T) {
+	const (
+		clientTimeout = 50 * time.Millisecond
+		serverDelay   = 4 * clientTimeout // always answers late, never instantly
+	)
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		time.Sleep(serverDelay) // every attempt hits the client timeout first
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	c := newTestClient(t, srv, "tok", WithTimeout(clientTimeout))
+	_, err := c.PushReport(context.Background(), ReportEnvelope{})
+	if !errors.Is(err, ErrPeerUnavailable) {
+		t.Fatalf("expected ErrPeerUnavailable, got %v", err)
+	}
+	if errors.Is(err, context.Canceled) {
+		t.Fatalf("a per-request timeout must not be reported as a caller cancellation: %v", err)
+	}
+	if got := attempts.Load(); got != 3 {
+		t.Fatalf("expected exactly 3 attempts (1 + 2 retries), got %d", got)
+	}
+}

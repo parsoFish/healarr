@@ -152,9 +152,15 @@ func (c *HTTPClient) Heartbeat(ctx context.Context, hb Heartbeat) (Ack, error) {
 }
 
 // doWithRetry runs fn up to 1+c.retries times. It returns immediately
-// (never retrying) on success, on context cancellation, on ErrUnauthorized
-// (401/403), and on any other 4xx response. It retries on a transport
-// error or a 5xx response, waiting c.backoff(attempt) between attempts;
+// (never retrying) on success, once the caller's ctx is done, on
+// ErrUnauthorized (401/403), and on any other 4xx response. It retries on
+// a transport error or a 5xx response, waiting c.backoff(attempt) between
+// attempts; the "is this a cancellation?" test is ctx.Err(), not the
+// returned error's identity, because one attempt exceeding the
+// per-request timeout (http.Client.Timeout) also reports
+// context.DeadlineExceeded while the caller's own context is still very
+// much alive — that is an unresponsive peer to retry, not a caller that
+// gave up;
 // after the final failed attempt it returns ErrPeerUnavailable wrapping the
 // last underlying error (via a multi-%w chain), so callers can still
 // errors.As into the original *httpx.APIError or transport error.
@@ -170,8 +176,8 @@ func (c *HTTPClient) doWithRetry(ctx context.Context, fn func(context.Context) e
 		if err == nil {
 			return nil
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return err
+		if ctx.Err() != nil {
+			return err // the caller's own context ended: stop, don't retry
 		}
 		var ae *httpx.APIError
 		if errors.As(err, &ae) {
