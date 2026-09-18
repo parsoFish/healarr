@@ -140,7 +140,7 @@ func TestSendDigestPeerNeverReportedOmitsPeerSection(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: false}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSendDigestPeerFreshIncludesFindings(t *testing.T) {
 	}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -212,7 +212,7 @@ func TestSendDigestPeerStaleMarksStaleSince(t *testing.T) {
 	}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	section, err := a.buildPeerSection(context.Background())
+	section, _, err := a.buildPeerSection(context.Background())
 	if err != nil {
 		t.Fatalf("buildPeerSection() err = %v", err)
 	}
@@ -313,7 +313,7 @@ func TestBuildPeerSectionPeerLatestReportErrorPropagates(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: true, LatestReportErr: wantErr}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	if _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
+	if _, _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("buildPeerSection() err = %v, want wrapping %v", err, wantErr)
 	}
 }
@@ -323,7 +323,7 @@ func TestBuildPeerSectionPeerOpenFindingsErrorPropagates(t *testing.T) {
 	fs := &fakeStore{LastPeerMessageAtFound: true, OpenFindingsErr: wantErr}
 	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
 
-	if _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
+	if _, _, err := a.buildPeerSection(context.Background()); !errors.Is(err, wantErr) {
 		t.Fatalf("buildPeerSection() err = %v, want wrapping %v", err, wantErr)
 	}
 }
@@ -366,16 +366,14 @@ func digestStalenessFinding(node config.Node, entity, title string, score float6
 
 // TestCollectStalenessFindingsSortsByScoreDescAcrossBothNodes proves the
 // digest's STALENESS input combines own and peer staleness_scan findings
-// (ignoring any other check id) and sorts the result by score descending.
+// (each already filtered by openStalenessFindings) and sorts the result
+// by score descending.
 func TestCollectStalenessFindingsSortsByScoreDescAcrossBothNodes(t *testing.T) {
 	own := []check.Finding{
 		digestStalenessFinding(config.NodePi, "sonarr:1", "Low", 40),
-		{CheckID: "disk_pressure", EntityKey: "/"}, // not staleness_scan: excluded
 		digestStalenessFinding(config.NodePi, "sonarr:2", "High", 90),
 	}
-	peer := &notify.PeerSection{
-		Findings: []check.Finding{digestStalenessFinding(config.NodeNAS, "radarr:1", "Mid", 65)},
-	}
+	peer := []check.Finding{digestStalenessFinding(config.NodeNAS, "radarr:1", "Mid", 65)}
 
 	got := collectStalenessFindings(own, peer)
 
@@ -390,14 +388,67 @@ func TestCollectStalenessFindingsSortsByScoreDescAcrossBothNodes(t *testing.T) {
 	}
 }
 
-// TestCollectStalenessFindingsNilPeerOmitsPeerFindings proves a nil
-// PeerSection (no peer report ever received) still returns the own-node
-// findings, rather than erroring or panicking on a nil dereference.
+// TestCollectStalenessFindingsNilPeerOmitsPeerFindings proves a nil peer
+// slice (no peer report ever received) still returns the own-node
+// findings, rather than erroring or panicking.
 func TestCollectStalenessFindingsNilPeerOmitsPeerFindings(t *testing.T) {
 	own := []check.Finding{digestStalenessFinding(config.NodePi, "sonarr:1", "Only", 50)}
 	got := collectStalenessFindings(own, nil)
 	if len(got) != 1 || got[0].Data["title"] != "Only" {
 		t.Fatalf("collectStalenessFindings() = %+v, want the one own finding", got)
+	}
+}
+
+// storedStalenessFinding wraps digestStalenessFinding as a
+// store.StoredFinding at the given status, for openStalenessFindings
+// tests — the layer where a snoozed staleness_scan finding still carries
+// its Status, before collectStalenessFindings ever sees it.
+func storedStalenessFinding(node config.Node, entity, title string, score float64, status string) store.StoredFinding {
+	return store.StoredFinding{Finding: digestStalenessFinding(node, entity, title, score), Status: status}
+}
+
+// TestOpenStalenessFindingsExcludesSnoozedAndOtherChecks proves
+// openStalenessFindings drops both a snoozed staleness_scan finding and
+// any finding from a different check id, keeping only open
+// staleness_scan findings — the filter collectStalenessFindings' own
+// callers (SendDigest for own, buildPeerSection for peer) rely on so a
+// snoozed candidate never resurfaces in the digest's STALENESS section.
+func TestOpenStalenessFindingsExcludesSnoozedAndOtherChecks(t *testing.T) {
+	stored := []store.StoredFinding{
+		storedStalenessFinding(config.NodePi, "sonarr:1", "Open", 40, "open"),
+		storedStalenessFinding(config.NodePi, "sonarr:2", "Snoozed", 90, "snoozed"),
+		{Finding: check.Finding{CheckID: "disk_pressure", EntityKey: "/"}, Status: "open"},
+	}
+
+	got := openStalenessFindings(stored)
+
+	if len(got) != 1 || got[0].Data["title"] != "Open" {
+		t.Fatalf("openStalenessFindings() = %+v, want only the open staleness_scan finding", got)
+	}
+}
+
+// TestSendDigestExcludesSnoozedStalenessFromBody proves a snoozed
+// staleness_scan finding never reaches the digest's rendered STALENESS
+// section end to end, while an open one at the same check id still does.
+func TestSendDigestExcludesSnoozedStalenessFromBody(t *testing.T) {
+	fs := &fakeStore{
+		OpenFindingsResult: []store.StoredFinding{
+			storedStalenessFinding(config.NodePi, "sonarr:1", "Still Stale", 80, "open"),
+			storedStalenessFinding(config.NodePi, "sonarr:2", "Just Snoozed", 95, "snoozed"),
+		},
+	}
+	a := newDigestTestAgent(t, func(o *Options) { o.Store = fs })
+
+	if _, err := a.SendDigest(context.Background()); err != nil {
+		t.Fatalf("SendDigest() err = %v", err)
+	}
+
+	body := fs.Emails[0].Body
+	if !strings.Contains(body, "Still Stale") {
+		t.Fatalf("digest body = %q, want it to include the open staleness finding", body)
+	}
+	if strings.Contains(body, "Just Snoozed") {
+		t.Fatalf("digest body = %q, want the snoozed staleness finding excluded from STALENESS", body)
 	}
 }
 

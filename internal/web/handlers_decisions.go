@@ -30,6 +30,14 @@ const decisionOutcomeAction = "decision_delete"
 // records dry-run plans under (internal/cli/cmd_cleanup.go).
 const cleanupActionPrefix = "cleanup:"
 
+// snoozedStatus is store.StoredFinding.Status's value for a finding the
+// operator has snoozed (Keep, below, or `healarr decide keep`).
+// OpenFindings returns status open and snoozed together; a snoozed
+// finding must not render as a decision candidate — see
+// stalenessCandidates and buildNodeView's identical filter in
+// handlers_dashboard.go.
+const snoozedStatus = "snoozed"
+
 // recentActivityWindow bounds how far back the decisions and history
 // pages look into remediations for recent activity.
 const recentActivityWindow = 7 * 24 * time.Hour
@@ -197,7 +205,7 @@ func (s *server) stalenessCandidates(ctx context.Context) ([]stalenessView, erro
 			return nil, fmt.Errorf("open findings %s: %w", node, err)
 		}
 		for _, f := range findings {
-			if f.CheckID != stalenessCheckID {
+			if f.CheckID != stalenessCheckID || f.Status == snoozedStatus {
 				continue
 			}
 			out = append(out, toStalenessView(f.EntityKey, f.Data, s.cfg.Staleness))

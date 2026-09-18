@@ -86,6 +86,44 @@ func TestDashboardEscapesFindingSummary(t *testing.T) {
 	}
 }
 
+// TestDashboardExcludesSnoozedFromCountAndSeverity proves a snoozed
+// finding (OpenFindings returns open and snoozed together) is excluded
+// both from the "N open findings" count and from the severity breakdown
+// it gates, while an open finding at the same node still renders.
+func TestDashboardExcludesSnoozedFromCountAndSeverity(t *testing.T) {
+	now := time.Now()
+	fs := &fakeStore{
+		LatestReportByNode: map[config.Node]check.Report{config.NodePi: {Node: config.NodePi, GeneratedAt: now}},
+		LatestReportOK:     map[config.Node]bool{config.NodePi: true},
+		OpenFindingsByNode: map[config.Node][]store.StoredFinding{
+			config.NodePi: {
+				{
+					Finding: check.Finding{CheckID: "disk_pressure", EntityKey: "/", Severity: check.SeverityCritical, Summary: "snoozed-critical-summary"},
+					Status:  "snoozed",
+				},
+				{
+					Finding: check.Finding{CheckID: "disk_pressure", EntityKey: "/mnt", Severity: check.SeverityWarn, Summary: "open-warn-summary"},
+					Status:  "open",
+				},
+			},
+		},
+	}
+
+	status, body := getAuthenticatedPage(t, fs, nil, "/healarr/")
+	if status != http.StatusOK {
+		t.Fatalf("GET / = %d, want 200; body: %s", status, body)
+	}
+	if strings.Contains(body, "snoozed-critical-summary") {
+		t.Errorf("dashboard body should omit a snoozed finding; body: %s", body)
+	}
+	if !strings.Contains(body, "open-warn-summary") {
+		t.Errorf("dashboard body missing the open finding; body: %s", body)
+	}
+	if !strings.Contains(body, "1 open findings") {
+		t.Errorf("dashboard body should count only the open finding; body: %s", body)
+	}
+}
+
 func TestDashboardReturns500OnStoreError(t *testing.T) {
 	fs := &fakeStore{LatestReportErr: errBoom}
 	status, _ := getAuthenticatedPage(t, fs, nil, "/healarr/")

@@ -64,6 +64,34 @@ func TestDecisionsPageRendersCandidatesSortedByScoreDesc(t *testing.T) {
 	}
 }
 
+// TestDecisionsPageOmitsSnoozedCandidate proves a snoozed staleness_scan
+// finding (OpenFindings returns open and snoozed together) never renders
+// as a decision candidate, while an open one at the same check id still
+// does.
+func TestDecisionsPageOmitsSnoozedCandidate(t *testing.T) {
+	snoozed := stalenessFixture("sonarr:1", "Snoozed Show", 92)
+	snoozed.Status = "snoozed"
+	open := stalenessFixture("sonarr:2", "Open Show", 55)
+	open.Status = "open"
+
+	fs := &fakeStore{
+		OpenFindingsByNode: map[config.Node][]store.StoredFinding{
+			config.NodePi: {snoozed, open},
+		},
+	}
+
+	status, body := getAuthenticatedPage(t, fs, nil, "/healarr/decisions")
+	if status != http.StatusOK {
+		t.Fatalf("GET /decisions = %d, want 200; body: %s", status, body)
+	}
+	if strings.Contains(body, "Snoozed Show") {
+		t.Errorf("decisions body should omit a snoozed candidate; body: %s", body)
+	}
+	if !strings.Contains(body, "Open Show") {
+		t.Errorf("decisions body missing the open candidate; body: %s", body)
+	}
+}
+
 func TestDecisionsPageShowsDisabledBannerWhenGated(t *testing.T) {
 	fs := &fakeStore{}
 	srv := newTestServer(t, fs, nil, "tok")

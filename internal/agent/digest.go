@@ -32,7 +32,7 @@ const stalenessScanCheckID = "staleness_scan"
 // (cleanupjob.go), whatever time the digest itself sends at.
 const digestCleanupWindow = 24 * time.Hour
 
-// cleanupPlannedAction/cleanupActionPrefix identify a cleanup dry-run
+// cleanupPlannedStatus/cleanupActionPrefix identify a cleanup dry-run
 // plan's remediations row (cleanupjob.go and internal/cli/cmd_cleanup.go
 // both record these): Action starts with "cleanup:<kind>" and Status is
 // "planned".
@@ -61,7 +61,7 @@ func (a *Agent) SendDigest(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("agent: send digest: own open findings: %w", err)
 	}
-	peerSection, err := a.buildPeerSection(ctx)
+	peerSection, peerStaleness, err := a.buildPeerSection(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("agent: send digest: %w", err)
 	}
@@ -79,7 +79,7 @@ func (a *Agent) SendDigest(ctx context.Context) (int64, error) {
 	}
 
 	input := notify.BuildDigest(a.cfg.Node, now, own, ownFindingList, peerSection, a.cfg.Web.PublicURL,
-		notify.WithStaleness(collectStalenessFindings(ownFindingList, peerSection)),
+		notify.WithStaleness(collectStalenessFindings(openStalenessFindings(ownFindings), peerStaleness)),
 		notify.WithCleanupPlans(cleanupPlans),
 		notify.WithPendingDecisions(len(pending)),
 	)
@@ -114,24 +114,31 @@ func (a *Agent) SendDigest(ctx context.Context) (int64, error) {
 // from the peer at all; otherwise it returns a section whose StaleSince is
 // non-nil exactly when the last received report is older than
 // Agent.PeerStaleAfter.
-func (a *Agent) buildPeerSection(ctx context.Context) (*notify.PeerSection, error) {
+//
+// It also returns the peer's own open (not snoozed) staleness_scan
+// findings, converted ready for collectStalenessFindings: PeerSection.
+// Findings is []check.Finding, which carries no Status, so a snoozed
+// finding can only be told apart from an open one here, before that
+// conversion drops it — mirroring stalenessCandidates' identical filter
+// in internal/web/handlers_decisions.go.
+func (a *Agent) buildPeerSection(ctx context.Context) (*notify.PeerSection, []check.Finding, error) {
 	peerNode := otherNode(a.cfg.Node)
 
 	lastReportAt, found, err := a.store.LastPeerMessageAt(ctx, peerNode, "report")
 	if err != nil {
-		return nil, fmt.Errorf("peer last message: %w", err)
+		return nil, nil, fmt.Errorf("peer last message: %w", err)
 	}
 	if !found {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	rep, repFound, err := a.store.LatestReport(ctx, peerNode)
 	if err != nil {
-		return nil, fmt.Errorf("peer latest report: %w", err)
+		return nil, nil, fmt.Errorf("peer latest report: %w", err)
 	}
 	peerFindings, err := a.store.OpenFindings(ctx, peerNode)
 	if err != nil {
-		return nil, fmt.Errorf("peer open findings: %w", err)
+		return nil, nil, fmt.Errorf("peer open findings: %w", err)
 	}
 
 	section := &notify.PeerSection{
@@ -147,7 +154,7 @@ func (a *Agent) buildPeerSection(ctx context.Context) (*notify.PeerSection, erro
 		staleSince := lastReportAt
 		section.StaleSince = &staleSince
 	}
-	return section, nil
+	return section, openStalenessFindings(peerFindings), nil
 }
 
 // toFindings extracts the check.Finding each StoredFinding embeds, without
@@ -160,27 +167,42 @@ func toFindings(stored []store.StoredFinding) []check.Finding {
 	return out
 }
 
-// collectStalenessFindings gathers every open staleness_scan finding
-// across both nodes — own (already fetched for the digest body) and the
-// peer's (from peerSection, when its channel has ever reported one) — and
-// sorts them by Data["score"] descending, so the digest's STALENESS
-// section highlights the most urgent candidates first. Neither own nor
-// peerSection is mutated: a fresh slice is built and sorted, never
-// resliced in place.
-func collectStalenessFindings(own []check.Finding, peerSection *notify.PeerSection) []check.Finding {
-	out := make([]check.Finding, 0, len(own))
-	for _, f := range own {
-		if f.CheckID == stalenessScanCheckID {
-			out = append(out, f)
+// snoozedStatus is store.StoredFinding.Status's value for a finding the
+// operator has snoozed (Keep, on the decisions page, or `healarr decide
+// keep`) — mirroring internal/web/handlers_decisions.go's identical
+// literal.
+const snoozedStatus = "snoozed"
+
+// openStalenessFindings filters stored (as returned by OpenFindings,
+// which mixes status open and snoozed together) down to this node's open
+// staleness_scan findings, converting each to the check.Finding
+// collectStalenessFindings merges and sorts. A snoozed finding is
+// deliberately excluded here, before the check.Finding conversion drops
+// its Status entirely — the digest's STALENESS section must not
+// re-surface something the operator has just snoozed, the same guarantee
+// stalenessCandidates gives the decisions page.
+func openStalenessFindings(stored []store.StoredFinding) []check.Finding {
+	out := make([]check.Finding, 0, len(stored))
+	for _, sf := range stored {
+		if sf.CheckID != stalenessScanCheckID || sf.Status == snoozedStatus {
+			continue
 		}
+		out = append(out, sf.Finding)
 	}
-	if peerSection != nil {
-		for _, f := range peerSection.Findings {
-			if f.CheckID == stalenessScanCheckID {
-				out = append(out, f)
-			}
-		}
-	}
+	return out
+}
+
+// collectStalenessFindings merges own and peer's open staleness_scan
+// findings (each already filtered by openStalenessFindings — own fetched
+// directly in SendDigest, peer's returned alongside its PeerSection by
+// buildPeerSection) and sorts the result by Data["score"] descending, so
+// the digest's STALENESS section highlights the most urgent candidates
+// first. Neither slice is mutated: a fresh slice is built and sorted,
+// never resliced in place.
+func collectStalenessFindings(own, peer []check.Finding) []check.Finding {
+	out := make([]check.Finding, 0, len(own)+len(peer))
+	out = append(out, own...)
+	out = append(out, peer...)
 	sort.SliceStable(out, func(i, j int) bool { return findingScore(out[i]) > findingScore(out[j]) })
 	return out
 }

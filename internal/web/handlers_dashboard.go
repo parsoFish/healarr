@@ -105,6 +105,12 @@ func (s *server) buildNodeView(ctx context.Context, node config.Node) (nodeView,
 	if err != nil {
 		return nodeView{}, fmt.Errorf("open findings: %w", err)
 	}
+	// OpenFindings returns status open and snoozed together; the
+	// dashboard's "N open findings" count (and the severity breakdown it
+	// gates) must reflect only what's actually open, not what the
+	// operator has already acknowledged and snoozed — see
+	// stalenessCandidates' identical filter in handlers_decisions.go.
+	findings = excludeSnoozed(findings)
 	nv.FindingsCount = len(findings)
 	nv.Critical, nv.Warn, nv.Info = groupBySeverity(findings)
 
@@ -124,6 +130,19 @@ func diskGauges(metrics map[string]float64) []diskGauge {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	return out
+}
+
+// excludeSnoozed drops snoozed rows from findings (OpenFindings returns
+// open and snoozed together), without mutating findings itself.
+func excludeSnoozed(findings []store.StoredFinding) []store.StoredFinding {
+	out := make([]store.StoredFinding, 0, len(findings))
+	for _, f := range findings {
+		if f.Status == snoozedStatus {
+			continue
+		}
+		out = append(out, f)
+	}
 	return out
 }
 
