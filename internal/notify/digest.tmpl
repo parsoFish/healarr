@@ -1,0 +1,42 @@
+healarr digest — {{.Node}} — {{.Timestamp}}
+
+Summary: {{.ChecksRun}} checks run, {{.ChecksFailed}} failed, {{.SkippedCount}} skipped, {{.FindingsCount}} open findings ({{.CriticalCount}} critical, {{.WarnCount}} warn, {{.InfoCount}} info)
+{{if not .HasFindings}}
+No open findings.
+{{end -}}
+{{if .Critical}}
+CRITICAL
+{{range .Critical -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{if .Warn}}
+WARN
+{{range .Warn -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{if .Info}}
+INFO
+{{range .Info -}}
+- [{{.CheckID}}] {{.Summary}}
+{{if .Detail}}    {{.Detail}}
+{{end -}}
+{{end -}}
+{{end -}}
+{{if .Errors}}
+Check errors:
+{{range .Errors -}}
+- [{{.CheckID}}] {{.Error}}
+{{end -}}
+{{end -}}
+{{if .SkippedCount}}
+Skipped (not configured): {{.SkippedList}}
+{{end -}}
+{{if .BaseURL}}
+Decisions: {{.BaseURL}}/decisions
+{{end -}}

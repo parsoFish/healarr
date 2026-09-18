@@ -39,9 +39,83 @@ Healarr's Docker checks call the Engine API directly over the Unix socket using 
 - `healarr docker ps` — confirms the Docker socket is reachable and shows what's actually running, independent of what simplarr's own compose state thinks.
 - `healarr host mounts` — confirms the host's mount table looks like what's expected; this is the check that would have caught the 2026-09-12 mount-race incident (see `docs/superpowers/specs/2026-09-12-go-rewrite-design.md`).
 
+## Running checks by hand
+
+Phase 2 shipped the check engine (`internal/check` + `internal/checks/*`) and the SQLite store (`internal/store`), and the CLI verbs below. There is no scheduler yet — that's Phase 3's cron daemon; until it ships, run checks and generate the digest by hand (e.g. from cron or a terminal).
+
+### The catalogue
+
+`healarr check list [--json]` prints every registered check: id, node(s), tier, and cadence (the interval Phase 3's daemon will use — the CLI itself does not schedule anything). The catalogue is 21 checks, each applying to `pi`, `nas`, or both:
+
+| Check ID | Node(s) | Cadence |
+|---|---|---|
+| `mount_race` | pi | 5m |
+| `host_mount_health` | pi, nas | 5m |
+| `arr_health` | pi | 5m |
+| `arr_queue_stuck` | pi | 15m |
+| `arr_wanted_missing_spike` | pi | 24h |
+| `indexer_failures` | pi | 15m |
+| `qbit_stalled_errored` | nas | 15m |
+| `qbit_completed_not_imported` | nas | 15m |
+| `wrong_file_type` | nas | 15m |
+| `plex_reachability` | nas | 5m |
+| `plex_scan_freshness` | nas | 24h |
+| `tautulli_reachability` | pi | 24h |
+| `overseerr_stuck_processing` | pi | 24h |
+| `disk_pressure_nas_volume` | nas | 1h |
+| `disk_pressure_pi_sd` | pi | 24h |
+| `docker_image_bloat` | pi | 24h |
+| `log_size` | pi | 24h |
+| `recycle_bin_size` | nas | 24h |
+| `orphan_downloads` | nas | 24h |
+| `seeded_done` | nas | 24h |
+| `service_update_available` | pi, nas | 24h |
+
+(`staleness_scan` from the spec's C5 table is intentionally not here — it's Phase 4 scope, alongside the staleness scorer of ADR-016.)
+
+### Running checks and generating the digest
+
+- `healarr check run (--all | --id <check-id>) [--dry-run] [--json]` — exactly one of `--all`/`--id` is required. `--all` runs every check that applies to this node (from `config.toml`'s `node = "pi"|"nas"`); `--id` runs one, and errors if that check doesn't apply to this node.
+- `healarr report generate [--dry-run] [--json]` — renders the plain-text digest (or, with `--json`, the digest's structured input).
+
+A check that errors or is skipped (its dependency isn't configured) is data, not a CLI failure — `check run`'s exit code stays 0 and the run continues; only a config-load or store failure returns non-zero.
+
+```bash
+# see the catalogue
+healarr check list --json
+
+# run everything for this node, look but don't touch the store
+healarr check run --all --dry-run --json
+
+# run one check for real (persists to the store)
+healarr check run --id qbit_stalled_errored
+
+# render the digest from the store's currently-open findings
+healarr report generate
+```
+
+### `--dry-run` semantics
+
+`--dry-run` is a global flag (`healarr --dry-run check run --all` and `healarr check run --all --dry-run` are equivalent) and for `check run`/`report generate` it means **the run never opens or writes the state database**:
+
+- `check run --dry-run` never calls `store.Open`, never reads a previous report, and never persists this one. `check.Deps.Previous` stays `nil`, so delta checks that compare against yesterday's number (e.g. `arr_wanted_missing_spike`, which reads `Deps.PreviousMetric`) see no baseline and simply don't fire. `--json` output always shows `"persisted": false` and an all-zero `"upsert": {"new": 0, "updated": 0, "resolved": 0}`.
+- `report generate --dry-run` runs every check for the node in memory and renders the digest straight from that in-process report — it never calls `LatestReport` or `OpenFindings`.
+
+### State DB location, dedup, and resolve
+
+The store is one SQLite file at `[state] db_path` (see the per-node paths in the README's configuration table; default `/var/lib/healarr/state.db`). `store.Open` creates the file if missing, sets `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, a 5s `busy_timeout`, and applies any pending embedded migration — `internal/store/migrations/0001_init.sql` creates every table Phase 2's design calls for (`schema_meta`, `reports`, `findings`, `remediations`, `decisions`, `peer_messages`, `staleness_scores`, `llm_calls`, `email_outbox`) up front, so later phases add columns, not tables. Only one connection is ever opened, so there's no multi-writer contention to reason about on the Pi's SD card.
+
+Each non-dry-run `check run` commits one transaction:
+
+1. Inserts the run's `reports` row.
+2. For every finding the run produced, upserts on `(node, check_id, entity_key)`: an existing `open`/`snoozed` row gets `last_seen`, `severity`, `summary`, `detail`, `data` refreshed and `seen_count` bumped; otherwise a new `open` row is inserted.
+3. For every check id that **ran successfully** this cycle, resolves (`status = 'resolved'`) any `open`/`snoozed` finding for that `(node, check_id)` whose `entity_key` wasn't reported this run.
+
+A check that errored or was skipped never resolves anything under its own id — a transient failure (Sonarr briefly unreachable) can't make that check's existing findings disappear just because it didn't run. `check run --json`'s `"upsert"` block reports the `{new, updated, resolved}` counts from that transaction. `report generate` (no `--dry-run`) reads back `store.OpenFindings` (status `open`/`snoozed`, sorted severity desc, check id, entity key) plus the node's `LatestReport` for the summary counts, and renders the same plain-text template Phase 3's cron job will eventually mail.
+
 ## Daily operations
 
-- **Digest email**: once Phase 3 ships, a daily digest summarises both nodes' findings and links into `/healarr/` for anything that needs a decision.
+- **Digest email**: once Phase 3 ships, a daily digest summarises both nodes' findings and links into `/healarr/` for anything that needs a decision. Until then, `healarr report generate` produces the same digest text by hand (see above).
 - **Decisions page**: once Phase 4 ships, staleness candidates and gated Correct-tier actions are approved or rejected from `/healarr/` on the LAN — no email reply, no IMAP.
 
 ## Common scenarios

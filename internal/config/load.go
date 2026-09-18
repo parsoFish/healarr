@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -115,13 +116,78 @@ func resolveArrKeys(cfg Config, in Secrets) (Secrets, error) {
 	return out, nil
 }
 
+// maxPercent is the upper bound of a disk-usage threshold: the percentages
+// in [checks] describe a share of one filesystem, so nothing above this is
+// reachable.
+const maxPercent = 100
+
 func validate(cfg Config) error {
-	switch cfg.Node {
+	if err := validateNode(cfg.Node); err != nil {
+		return err
+	}
+	return validateChecks(cfg.Checks)
+}
+
+func validateNode(node Node) error {
+	switch node {
 	case NodePi, NodeNAS:
 		return nil
 	case "":
 		return errors.New("config: node is required (\"pi\" or \"nas\")")
 	default:
-		return fmt.Errorf("config: unknown node %q (want \"pi\" or \"nas\")", cfg.Node)
+		return fmt.Errorf("config: unknown node %q (want \"pi\" or \"nas\")", node)
 	}
+}
+
+// durationField pairs one [checks] duration with the TOML key it was read
+// from, so a rejection can name the line the operator has to fix.
+type durationField struct {
+	key string
+	d   time.Duration
+}
+
+// checkDurations lists every duration in Checks against its TOML key.
+// Adding a duration to Checks means adding it here;
+// TestValidateRejectsEveryNegativeChecksDuration walks the struct by
+// reflection and fails if one is missed.
+func checkDurations(c Checks) []durationField {
+	return []durationField{
+		{"timeout", c.Timeout},
+		{"queue_stuck_after", c.QueueStuckAfter},
+		{"qbit_stalled_after", c.QBitStalledAfter},
+		{"completed_not_imported_after", c.CompletedNotImportedAfter},
+		{"arr_history_window", c.ArrHistoryWindow},
+		{"orphan_after", c.OrphanAfter},
+		{"indexer_failure_window", c.IndexerFailureWindow},
+		{"overseerr_stuck_after", c.OverseerrStuckAfter},
+		{"plex_scan_stale_after", c.PlexScanStaleAfter},
+		{"seeded_min_age", c.SeededMinAge},
+	}
+}
+
+// validateChecks rejects thresholds the check engine could not act on, at
+// load time rather than at 07:00 when the digest comes out wrong: a
+// non-positive per-check timeout would fail every check instantly, a
+// negative duration is always a typo (every one of them is an age or a
+// window measured forward from an event), and disk thresholds only mean
+// anything as an ordered pair inside 0–100.
+func validateChecks(c Checks) error {
+	if c.Timeout <= 0 {
+		return fmt.Errorf("config: checks.timeout must be > 0 (got %s)", c.Timeout)
+	}
+	for _, f := range checkDurations(c) {
+		if f.d < 0 {
+			return fmt.Errorf("config: checks.%s must be >= 0 (got %s)", f.key, f.d)
+		}
+	}
+	switch {
+	case c.DiskWarnPercent <= 0:
+		return fmt.Errorf("config: checks.disk_warn_percent must be > 0 (got %v)", c.DiskWarnPercent)
+	case c.DiskCritPercent < c.DiskWarnPercent:
+		return fmt.Errorf("config: checks.disk_crit_percent must be >= checks.disk_warn_percent (got %v < %v)",
+			c.DiskCritPercent, c.DiskWarnPercent)
+	case c.DiskCritPercent > maxPercent:
+		return fmt.Errorf("config: checks.disk_crit_percent must be <= %d (got %v)", maxPercent, c.DiskCritPercent)
+	}
+	return nil
 }

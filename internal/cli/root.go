@@ -50,6 +50,8 @@ func NewRootCmd(deps *Deps) *cobra.Command {
 		newDockerCmd(deps, flags),
 		newHostCmd(deps, flags),
 		newConfigCmd(deps, flags),
+		newCheckCmd(deps, flags),
+		newReportCmd(deps, flags),
 	)
 	return root
 }

@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
 
+	"github.com/parsoFish/healarr/internal/check"
+	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/docker"
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
 	"github.com/parsoFish/healarr/internal/clients/httpx"
@@ -34,6 +37,14 @@ type Deps struct {
 	Overseerr func(cfg config.Config, sec config.Secrets) (overseerr.Client, error)
 	Docker    func(cfg config.Config, sec config.Secrets) (docker.Client, error)
 	Host      func(cfg config.Config, sec config.Secrets) (hostfs.Client, error)
+
+	// Registry builds the health check catalogue for cfg. Defaults to
+	// checks.Registry.
+	Registry func(cfg config.Config) (*check.Registry, error)
+	// OpenStore opens the node's state store. Nil falls back to
+	// defaultOpenStore, which wraps store.Open(ctx, cfg.State.DBPath).
+	// Never called on --dry-run.
+	OpenStore func(ctx context.Context, cfg config.Config) (StoreAPI, error)
 }
 
 // DefaultDeps wires the real constructors, reading service URLs and
@@ -68,6 +79,8 @@ func DefaultDeps() *Deps {
 		Host: func(config.Config, config.Secrets) (hostfs.Client, error) {
 			return hostfs.New(""), nil
 		},
+		Registry:  checks.Registry,
+		OpenStore: defaultOpenStore,
 	}
 }
 

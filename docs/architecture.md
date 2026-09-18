@@ -67,13 +67,14 @@ internal/config/                          TOML + env override; secrets file; nod
 internal/clients/{sonarr,radarr,prowlarr,
   qbittorrent,plex,tautulli,overseerr,
   docker,hostfs}/                         Client interface + adapter + httptest fake + golden fixtures (Tasks 4-10)
-internal/check/                           Check interface, registry, Finding/Report types, dedup
-internal/checks/{mounts,queue,indexers,
-  qbit,plex,disk,updates,requests}/       one check family per dir, table-tested against fixtures
+internal/check/                           Check struct, Registry + Run (the runner), Finding/Report/Result types,
+                                             Deps (incl. Deps.Previous for delta checks) — pure, store-agnostic (ADR-017)
+internal/checks/{arr,disk,indexers,mounts,
+  plex,qbit,requests}/                    one check family per dir, 21 checks total, table-tested against fixtures
 internal/staleness/                       score formula (pure function, ADR-016), candidate selection
 internal/cleanup/                         recycle-bin / orphan / seeded-torrent / docker-prune actions (dry-run first)
 internal/decision/                        keep/delete/approve/reject executor (arr delete-with-files, overseerr sync)
-internal/store/                           modernc.org/sqlite, schema.sql, numbered migrations
+internal/store/                           modernc.org/sqlite, embedded migrations, dedup/resolve on SaveReport (ADR-017)
 internal/peer/                            HTTP server+client, bearer token, message types (ADR-015)
 internal/agent/                           daemon: cron, orchestration, digest reconciliation, guards
 internal/notify/                          msmtp shell-out, digest templates
@@ -87,6 +88,8 @@ deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http:
 
 `internal/clients/*` and `internal/cli/*` are what Phase 1 (this repo state) delivers: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
 
+`internal/check` (the runner: `Registry`, `Run`, `Deps`, `Finding`/`Report`/`Result`) and `internal/checks/*` (the 21 check implementations, one family per client) are what Phase 2 delivers, together with `internal/store` and the `healarr check`/`report` CLI verbs — see ADR-017 and the "State store" section below for the store side, and `docs/runbook.md`'s "Running checks by hand" for the CLI.
+
 ### Check tiers (unchanged concept from the Python design — ADR-006)
 
 Every check still classifies its possible remediation by blast radius, same four tiers as before, now driven off the `auto tier` column of the check catalogue rather than an LLM tool call per event:
@@ -98,19 +101,21 @@ Every check still classifies its possible remediation by blast radius, same four
 
 ### State store (`internal/store/`)
 
-SQLite via `modernc.org/sqlite` (ADR-013), `PRAGMA journal_mode=WAL, synchronous=NORMAL`, batched writes per cycle — the Pi's SD card and the NAS's flash both make write amplification worth avoiding. Tables:
+SQLite via `modernc.org/sqlite` (ADR-013). `store.Open` sets `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, and a 5s `busy_timeout`, pins the connection pool to one connection, and applies any pending embedded migration — the Pi's SD card and the NAS's flash both make write amplification and multi-writer contention worth avoiding. `internal/store/migrations/0001_init.sql` creates every table below in one shot (Phase 2 only reads/writes `reports` and `findings`; later phases add columns, not tables):
 
-| Table | Purpose |
-|---|---|
-| `reports` | one row per node per check cycle |
-| `findings` | Check outputs, deduped on `check_id + entity_key` while `status ∈ open\|snoozed` |
-| `remediations` | executed tool calls + outcomes (was `actions`) |
-| `decisions` | staleness keep/delete and other human decisions (`pending\|executed\|failed`, `snooze_until`) |
-| `peer_messages` | inbound/outbound peer protocol log |
-| `staleness_scores` | per-entity score + component breakdown (ADR-016) |
-| `llm_calls` | daily digest LLM calls + cost |
-| `email_outbox` | sent digest emails |
-| `schema_meta` | applied migration versions |
+| Table | Purpose | Phase 2 status |
+|---|---|---|
+| `reports` | one row per node per check run (`ran`/`skipped`/`errors`/`metrics` as JSON columns) | written by `SaveReport` |
+| `findings` | check outputs, deduped on `(node, check_id, entity_key)` while `status ∈ open\|snoozed`, auto-resolved when a successful check stops emitting them (ADR-017) | written by `SaveReport` |
+| `remediations` | executed tool calls + outcomes (was `actions`) | unused |
+| `decisions` | staleness keep/delete and other human decisions (`pending\|executed\|failed`, `snooze_until`) | unused |
+| `peer_messages` | inbound/outbound peer protocol log | unused |
+| `staleness_scores` | per-entity score + component breakdown (ADR-016) | unused |
+| `llm_calls` | daily digest LLM calls + cost | unused |
+| `email_outbox` | sent digest emails | unused |
+| `schema_meta` | applied migration version | written by `migrate` |
+
+`SaveReport(ctx, check.Report)` inserts the report row and upserts its findings in one transaction; `LatestReport` and `OpenFindings` are the two reads `check run` (delta checks' baseline) and `report generate` (digest input) use. See `docs/runbook.md`'s "Running checks by hand" for the exact dedup/resolve mechanics and CLI usage.
 
 Dropped from the Python design: `observations` (raw per-poll snapshots — too much write churn for an SD card), `proposals` and `email_inbox` (IMAP-era approval bookkeeping, gone with ADR-014).
 
@@ -141,11 +146,11 @@ Go rewrite (ADR-013..016) replaces the earlier Python-era phase plan below. Each
 - CI: `go vet`, `golangci-lint`, tests, cross-compile matrix (`build-pi` / `build-nas`)
 - Docs: ADR-013/014/015/016, this README/architecture/runbook rewrite
 
-### Phase 2 — Checks + store + one-shot report
+### Phase 2 — Checks + store + one-shot report ✅
 
-- SQLite schema + store (`internal/store/`)
-- Check registry + every check from the C5 catalogue as a pure function with table tests
-- `healarr check run --all [--dry-run]`, `healarr report generate --dry-run`
+- SQLite schema + store (`internal/store/`): embedded migrations, `SaveReport` dedup/resolve, `LatestReport`, `OpenFindings` (ADR-017)
+- Check registry + all 21 checks from the C5 catalogue (every row except `staleness_scan`, which is Phase 4) as pure functions with table tests
+- `healarr check list [--json]`, `healarr check run (--all | --id <id>) [--dry-run] [--json]`, `healarr report generate [--dry-run] [--json]`
 
 ### Phase 3 — Daemon + peer + digest email
 
