@@ -38,21 +38,52 @@ func Run(ctx context.Context, checks []Check, d Deps, timeout time.Duration) Rep
 	return rep
 }
 
+// outcome is what one check goroutine reports back to runOne.
+type outcome struct {
+	res Result
+	err error
+}
+
 // runOne applies the timeout and converts a panic inside a check into an
 // error so one bad check cannot take the daemon down.
-func runOne(ctx context.Context, c Check, d Deps, timeout time.Duration) (res Result, err error) {
+//
+// The check runs in its own goroutine because a context deadline alone
+// cannot bound it: the checks that matter most here end in a syscall
+// (stat, statfs, readdir) against an NFS mount, and a syscall stuck on a
+// hung mount is uninterruptible — no amount of ctx cancellation returns
+// control. So runOne races the result against the deadline and, on
+// timeout, deliberately abandons the goroutine rather than waiting for a
+// call that may never return. The leak is bounded: at most one goroutine
+// per stuck check, and each one exits as soon as its syscall unblocks.
+// The result channel is buffered so that abandoned send never blocks.
+//
+// A check's own error is returned verbatim: CheckError.CheckID already
+// carries the id and every renderer prefixes it, so wrapping it with the
+// id here would print it twice.
+func runOne(ctx context.Context, c Check, d Deps, timeout time.Duration) (Result, error) {
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("check %s panicked: %v", c.ID, r)
-		}
+
+	done := make(chan outcome, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				done <- outcome{err: fmt.Errorf("panicked: %v", r)}
+			}
+		}()
+		res, err := c.Run(cctx, d)
+		done <- outcome{res: res, err: err}
 	}()
-	res, err = c.Run(cctx, d)
-	if err != nil && !errors.Is(err, ErrNotConfigured) {
-		return Result{}, fmt.Errorf("check %s: %w", c.ID, err)
+
+	select {
+	case o := <-done:
+		if o.err != nil && !errors.Is(o.err, ErrNotConfigured) {
+			return Result{}, o.err
+		}
+		return o.res, o.err
+	case <-cctx.Done():
+		return Result{}, fmt.Errorf("check %s: %w", c.ID, cctx.Err())
 	}
-	return res, err
 }
 
 // sortFindings orders findings by (Severity desc, CheckID, EntityKey) so

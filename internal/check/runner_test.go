@@ -32,7 +32,7 @@ func TestRunCollectsFindingsErrorsAndSkips(t *testing.T) {
 	if len(rep.Skipped) != 1 || rep.Skipped[0] != "skip" {
 		t.Fatalf("skipped: %v", rep.Skipped)
 	}
-	if len(rep.Errors) != 1 || rep.Errors[0].CheckID != "bad" || rep.Errors[0].Error != "check bad: boom" {
+	if len(rep.Errors) != 1 || rep.Errors[0].CheckID != "bad" || rep.Errors[0].Error != "boom" {
 		t.Fatalf("errors: %+v", rep.Errors)
 	}
 	if len(rep.Findings) != 2 || rep.Findings[0].Severity != SeverityCritical {
@@ -62,6 +62,32 @@ func TestRunRecoversPanic(t *testing.T) {
 	rep := Run(context.Background(), []Check{p}, testDeps(), time.Second)
 	if rep.ChecksFailed != 1 || !strings.Contains(rep.Errors[0].Error, "panicked") {
 		t.Fatalf("got %+v", rep.Errors)
+	}
+	// CheckError.CheckID already carries the id, and every renderer
+	// prefixes it, so the stored text must not repeat it.
+	if got := rep.Errors[0].Error; got != "panicked: oops" {
+		t.Fatalf("Error = %q, want %q", got, "panicked: oops")
+	}
+}
+
+// TestRunTimesOutCheckThatIgnoresContext proves the per-check timeout
+// bounds a check that blocks on an uninterruptible call (a stat() on a
+// hung NFS mount is the motivating case) and not merely one that
+// cooperatively selects on ctx.Done().
+func TestRunTimesOutCheckThatIgnoresContext(t *testing.T) {
+	blocking := Check{ID: "blocking", Nodes: []config.Node{config.NodePi}, Run: func(context.Context, Deps) (Result, error) {
+		time.Sleep(2 * time.Second)
+		return Result{}, nil
+	}}
+	start := time.Now()
+	rep := Run(context.Background(), []Check{blocking}, testDeps(), 20*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if rep.ChecksFailed != 1 || !strings.Contains(rep.Errors[0].Error, "deadline") {
+		t.Fatalf("expected a deadline error, got %+v", rep.Errors)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("Run took %v; the timeout did not bound the blocking check", elapsed)
 	}
 }
 
