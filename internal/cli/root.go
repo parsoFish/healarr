@@ -52,6 +52,9 @@ func NewRootCmd(deps *Deps) *cobra.Command {
 		newConfigCmd(deps, flags),
 		newCheckCmd(deps, flags),
 		newReportCmd(deps, flags),
+		newAgentCmd(deps, flags),
+		newNotifyCmd(deps, flags),
+		newPeerCmd(deps, flags),
 	)
 	return root
 }

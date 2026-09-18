@@ -103,7 +103,12 @@ func runCLIErr(t *testing.T, deps *Deps, args ...string) (string, error) {
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
 	cmd.SetArgs(args)
-	return buf.String(), cmd.Execute()
+	// Execute (not the return statement's expression list) must run first:
+	// Go evaluates a return's operands left to right, so
+	// `return buf.String(), cmd.Execute()` would capture buf before
+	// Execute ever wrote to it.
+	err := cmd.Execute()
+	return buf.String(), err
 }
 
 func TestSonarrMissingJSON(t *testing.T) {
