@@ -177,6 +177,9 @@ func TestLoadRejectsBadStalenessThresholds(t *testing.T) {
 		{"candidate above 100", "candidate_threshold = 150\n", "staleness.candidate_threshold"},
 		{"zero snooze_days", "snooze_days = 0\n", "staleness.snooze_days"},
 		{"negative snooze_days", "snooze_days = -1\n", "staleness.snooze_days"},
+		{"zero days_horizon", "days_horizon = 0\n", "staleness.days_horizon"},
+		{"negative days_horizon", "days_horizon = -1\n", "staleness.days_horizon"},
+		{"negative never_watched_after_days", "never_watched_after_days = -1\n", "staleness.never_watched_after_days"},
 	}
 
 	for _, tt := range tests {

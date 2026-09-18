@@ -280,16 +280,26 @@ func stalenessFloats(s Staleness) []stalenessFloatField {
 
 // validateStaleness rejects [staleness] values the C6 scorer could not act
 // on: TOML's nan/inf float literals decode cleanly, so a non-finite point
-// weight or threshold is checked explicitly rather than trusted, the two
-// thresholds only mean anything as an ordered pair inside (0, 100] (a
-// candidate must first clear the watchlist bar), and a non-positive
-// snooze_days would mean a snoozed title never resurfaces (<= 0 leaves it
-// permanently — or, negative, immediately — eligible again).
+// weight or threshold is checked explicitly rather than trusted; a
+// non-positive days_horizon would make the days-since-added component
+// divide by zero (or flip sign on a negative horizon); a negative
+// never_watched_after_days is always a typo (it's compared against a
+// count of days since a title was added); the two thresholds only mean
+// anything as an ordered pair inside (0, 100] (a candidate must first
+// clear the watchlist bar); and a non-positive snooze_days would mean a
+// snoozed title never resurfaces (<= 0 leaves it permanently — or,
+// negative, immediately — eligible again).
 func validateStaleness(s Staleness) error {
 	for _, f := range stalenessFloats(s) {
 		if math.IsNaN(f.v) || math.IsInf(f.v, 0) {
 			return fmt.Errorf("config: staleness.%s must be finite (got %v)", f.key, f.v)
 		}
+	}
+	if s.DaysHorizon <= 0 {
+		return fmt.Errorf("config: staleness.days_horizon must be > 0 (got %d)", s.DaysHorizon)
+	}
+	if s.NeverWatchedAfterDays < 0 {
+		return fmt.Errorf("config: staleness.never_watched_after_days must be >= 0 (got %d)", s.NeverWatchedAfterDays)
 	}
 	switch {
 	case s.WatchlistThreshold <= 0:
