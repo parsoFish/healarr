@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -114,6 +116,10 @@ func TestOpenFindingsErrorsOnClosedStore(t *testing.T) {
 	}
 }
 
+// TestCheckpointSucceedsAndIsIdempotent is the happy path: with no other
+// connection holding the WAL open, PRAGMA wal_checkpoint(TRUNCATE) reports
+// busy=0 (see checkpointResult), so Checkpoint returns nil, and it stays
+// nil across repeated calls.
 func TestCheckpointSucceedsAndIsIdempotent(t *testing.T) {
 	s := openTemp(t)
 	ctx := context.Background()
@@ -135,6 +141,68 @@ func TestCheckpointErrorsOnClosedStore(t *testing.T) {
 	s := closedStore(t)
 	if err := s.Checkpoint(context.Background()); err == nil {
 		t.Fatal("expected error from a closed store")
+	}
+}
+
+// TestCheckpointReturnsErrCheckpointBusyWhenReaderBlocksTruncate exercises
+// the real busy path end to end: a second connection to the same file
+// opens a read transaction and reads a page *before* the store writes a
+// new one, pinning that connection's WAL snapshot to the older frame
+// count. TRUNCATE then cannot reclaim the newer frames the pinned reader
+// might still need, so PRAGMA wal_checkpoint(TRUNCATE) reports busy!=0
+// and Checkpoint must surface ErrCheckpointBusy rather than nil.
+func TestCheckpointReturnsErrCheckpointBusyWhenReaderBlocksTruncate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.db")
+
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	reader, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+
+	readerTx, err := reader.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = readerTx.Rollback() })
+	// A read establishes the transaction's WAL snapshot at the current
+	// (pre-write) frame count.
+	if _, err := readerTx.Exec(`SELECT count(*) FROM reports`); err != nil {
+		t.Fatal(err)
+	}
+
+	rep := check.Report{Node: config.NodePi, GeneratedAt: time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)}
+	if _, _, err := s.SaveReport(context.Background(), rep); err != nil {
+		t.Fatal(err)
+	}
+
+	err = s.Checkpoint(context.Background())
+	if !errors.Is(err, ErrCheckpointBusy) {
+		t.Fatalf("err = %v, want ErrCheckpointBusy", err)
+	}
+}
+
+// TestCheckpointResultRejectsNonZeroBusy is a deterministic, driver- and
+// timing-independent guard on the busy branch: checkpointResult must turn
+// any non-zero busy count into ErrCheckpointBusy, and leave a zero count
+// as success. This backs
+// TestCheckpointReturnsErrCheckpointBusyWhenReaderBlocksTruncate, whose
+// busy=1 outcome depends on real SQLite WAL locking behaviour.
+func TestCheckpointResultRejectsNonZeroBusy(t *testing.T) {
+	if err := checkpointResult(0); err != nil {
+		t.Fatalf("checkpointResult(0) = %v, want nil", err)
+	}
+	for _, busy := range []int{1, 2, -1} {
+		if err := checkpointResult(busy); !errors.Is(err, ErrCheckpointBusy) {
+			t.Fatalf("checkpointResult(%d) = %v, want ErrCheckpointBusy", busy, err)
+		}
 	}
 }
 

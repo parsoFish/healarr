@@ -122,6 +122,35 @@ func TestMarkEmailFailedRecordsCauseAndLeavesOutOfPending(t *testing.T) {
 	}
 }
 
+// TestMarkEmailFailedRejectsNilCause guards against a nil cause reaching
+// cause.Error() (which would panic): the caller must always supply the
+// underlying send error, and a nil one is a caller bug, not a value to
+// paper over with placeholder text.
+func TestMarkEmailFailedRejectsNilCause(t *testing.T) {
+	s := openTemp(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)
+
+	id, err := s.EnqueueEmail(ctx, "a@example.invalid", "s", "b", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.MarkEmailFailed(ctx, id, t0.Add(time.Minute), nil); !errors.Is(err, ErrBadEmailFailure) {
+		t.Fatalf("err = %v, want ErrBadEmailFailure", err)
+	}
+
+	// The row must be left exactly as EnqueueEmail created it: still
+	// pending, no partial write from the rejected call.
+	pending, err := s.PendingEmails(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].ID != id {
+		t.Fatalf("pending = %+v, want the untouched enqueued row", pending)
+	}
+}
+
 func TestMarkEmailSentErrorsWhenIDMissing(t *testing.T) {
 	s := openTemp(t)
 	t0 := time.Date(2026, 9, 18, 1, 0, 0, 0, time.UTC)

@@ -12,6 +12,12 @@ import (
 // doesn't match any email_outbox row.
 var ErrEmailNotFound = errors.New("store: email not found")
 
+// ErrBadEmailFailure is returned by MarkEmailFailed when cause is nil. A
+// nil cause is a caller bug (fail fast per project convention), never a
+// value to paper over with placeholder text: the whole point of the
+// outbox's error column is to record what actually went wrong.
+var ErrBadEmailFailure = errors.New("store: mark email failed requires a non-nil cause")
+
 // OutboxEmail mirrors one email_outbox row returned by PendingEmails.
 type OutboxEmail struct {
 	ID        int64
@@ -56,8 +62,13 @@ func (s *Store) MarkEmailSent(ctx context.Context, id int64, at time.Time) error
 }
 
 // MarkEmailFailed marks id "failed" at the given time, recording cause's
-// message. It returns ErrEmailNotFound when id doesn't exist.
+// message. It returns ErrEmailNotFound when id doesn't exist, and
+// ErrBadEmailFailure when cause is nil.
 func (s *Store) MarkEmailFailed(ctx context.Context, id int64, at time.Time, cause error) error {
+	if cause == nil {
+		return fmt.Errorf("store: mark email %d failed: %w", id, ErrBadEmailFailure)
+	}
+
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE email_outbox SET status = 'failed', sent_at = ?, error = ? WHERE id = ?`,
 		formatTime(at), cause.Error(), id,
