@@ -150,7 +150,7 @@ These tools exist as schema in the agent's prompt so the model knows what shape 
 1. Pick a tier. If unsure, default to Correct (gated) or Escalate (propose-only).
 2. Add the tool function in the (not yet built) tool dispatcher package — `internal/check` is already taken by Phase 2's deterministic check engine, so the dispatcher needs its own home; see `docs/architecture.md`'s package layout for the current plan. It should be a thin wrapper over the relevant service client's `Client` method, returning a typed result the dispatcher and, eventually, the agent can read — not a raw HTTP response.
 3. Register it in the tool/tier registry with the correct tier.
-4. Add a unit test that exercises happy path + at least one error case; each arrkit package (and `internal/clients/{docker,hostfs}`) already ships an `httptest`-backed fake per service (Phase 1) to build it on.
+4. Add a unit test that exercises happy path + at least one error case; each arrkit package (and `internal/clients/{docker,hostfs}`) already ships an in-memory `Fake` per service (Phase 1) to build it on.
 5. Update this doc.
 
 Tier reclassification (e.g. moving a Correct-tier tool to Nudge after operational confidence) is a config change in the registry — no code change needed.

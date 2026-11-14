@@ -54,3 +54,5 @@ Desktop.ini
 *.db-wal
 *.db-shm
 secrets.toml
+go.work
+go.work.sum

@@ -36,7 +36,7 @@ var ErrUnauthorized = errors.New("peer: unauthorized")
 var ErrPeerUnavailable = errors.New("peer: unavailable")
 
 // HTTPClient is the default Client implementation: a small retrying
-// wrapper around internal/clients/httpx with a static bearer token.
+// wrapper around arrkit/httpx with a static bearer token.
 type HTTPClient struct {
 	http    *httpx.Client
 	retries int

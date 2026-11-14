@@ -90,7 +90,7 @@ deploy/dsm/healarr-boot.sh                NAS Task Scheduler boot-up script (abs
 deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http://<pi-ip>:8091/; }` for simplarr split.conf
 ```
 
-The service clients (now in `github.com/parsoFish/arrkit`, ADR-020), `internal/clients/{docker,hostfs}` and `internal/cli/*` are what Phase 1 delivered: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
+The service clients (now in `github.com/parsoFish/arrkit`, ADR-020), `internal/clients/{docker,hostfs}` and `internal/cli/*` are what Phase 1 delivered: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an in-memory `Fake` for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
 
 `internal/check` (the runner: `Registry`, `Run`, `Deps`, `Finding`/`Report`/`Result`) and `internal/checks/*` (21 check implementations, one family per client) are what Phase 2 delivers, together with `internal/store` and the `healarr check`/`report` CLI verbs — see ADR-017 and the "State store" section below for the store side, and `docs/runbook.md`'s "Running checks by hand" for the CLI. Phase 4 adds the catalogue's 22nd check, `staleness_scan` (`internal/staleness/`, ADR-016) — see the "Decisions" section below.
 
