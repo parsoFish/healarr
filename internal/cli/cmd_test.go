@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/overseerr"
+	"github.com/parsoFish/arrkit/plex"
+	"github.com/parsoFish/arrkit/prowlarr"
+	"github.com/parsoFish/arrkit/qbittorrent"
+	"github.com/parsoFish/arrkit/radarr"
+	"github.com/parsoFish/arrkit/sonarr"
+	"github.com/parsoFish/arrkit/tautulli"
 	"github.com/parsoFish/healarr/internal/checks"
 	"github.com/parsoFish/healarr/internal/clients/docker"
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
-	"github.com/parsoFish/healarr/internal/clients/overseerr"
-	"github.com/parsoFish/healarr/internal/clients/plex"
-	"github.com/parsoFish/healarr/internal/clients/prowlarr"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
-	"github.com/parsoFish/healarr/internal/clients/radarr"
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
-	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

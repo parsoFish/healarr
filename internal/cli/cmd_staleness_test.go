@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
+	"github.com/parsoFish/arrkit/sonarr"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

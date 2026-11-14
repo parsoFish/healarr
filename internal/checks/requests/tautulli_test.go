@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/parsoFish/arrkit/tautulli"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

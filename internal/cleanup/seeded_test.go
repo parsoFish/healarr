@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/qbittorrent"
+	"github.com/parsoFish/arrkit/sonarr"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

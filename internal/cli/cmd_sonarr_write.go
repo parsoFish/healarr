@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
+	"github.com/parsoFish/arrkit/sonarr"
 )
 
 // addSonarrWriteCmds registers every mutating Sonarr verb on root. Split out

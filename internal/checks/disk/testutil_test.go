@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/qbittorrent"
 	"github.com/parsoFish/healarr/internal/check"
 	"github.com/parsoFish/healarr/internal/clients/docker"
 	"github.com/parsoFish/healarr/internal/clients/hostfs"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

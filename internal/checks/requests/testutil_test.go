@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/overseerr"
+	"github.com/parsoFish/arrkit/tautulli"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/overseerr"
-	"github.com/parsoFish/healarr/internal/clients/tautulli"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

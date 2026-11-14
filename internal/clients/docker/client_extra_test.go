@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/parsoFish/healarr/internal/clients/httpx"
+	"github.com/parsoFish/arrkit/httpx"
 )
 
 // This file supplements client_test.go: DiskUsage arithmetic, PruneImages'

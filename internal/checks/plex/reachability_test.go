@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/parsoFish/arrkit/plex"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/plex"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/parsoFish/healarr/internal/clients/httpx"
+	"github.com/parsoFish/arrkit/httpx"
 )
 
 // baseURL is unversioned: the Pi's daemon tops out at API 1.41 and rejects a

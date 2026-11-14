@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/parsoFish/arrkit/qbittorrent"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
 )
 
 const wrongFileTypeID = "wrong_file_type"

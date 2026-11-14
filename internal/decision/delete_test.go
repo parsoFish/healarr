@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/overseerr"
+	"github.com/parsoFish/arrkit/radarr"
+	"github.com/parsoFish/arrkit/sonarr"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/overseerr"
-	"github.com/parsoFish/healarr/internal/clients/radarr"
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/config"
 	"github.com/parsoFish/healarr/internal/store"
 )

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
+	"github.com/parsoFish/arrkit/sonarr"
 )
 
 type widget struct {

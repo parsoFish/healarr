@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/parsoFish/arrkit/prowlarr"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/prowlarr"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

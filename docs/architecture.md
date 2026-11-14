@@ -64,9 +64,9 @@ Go package layout (one feature per directory, files kept under ~400 lines):
 ```
 cmd/healarr/main.go                       cobra root — CLI + `agent serve` entry point
 internal/config/                          TOML + env override; secrets file; node identity (pi|nas)
-internal/clients/{sonarr,radarr,prowlarr,
-  qbittorrent,plex,tautulli,overseerr,
-  docker,hostfs}/                         Client interface + adapter + httptest fake + golden fixtures (Tasks 4-10)
+github.com/parsoFish/arrkit/{sonarr,radarr,prowlarr,
+  qbittorrent,plex,tautulli,overseerr,httpx}  service clients, in their own module since ADR-020
+internal/clients/{docker,hostfs}/         host-specific clients: interface + adapter + fake + golden fixtures
 internal/check/                           Check struct, Registry + Run (the runner), Finding/Report/Result types,
                                              Deps (incl. Deps.Previous for delta checks) — pure, store-agnostic (ADR-017)
 internal/checks/{arr,disk,indexers,mounts,
@@ -90,7 +90,7 @@ deploy/dsm/healarr-boot.sh                NAS Task Scheduler boot-up script (abs
 deploy/nginx/healarr.conf.snippet         `location /healarr/ { proxy_pass http://<pi-ip>:8091/; }` for simplarr split.conf
 ```
 
-`internal/clients/*` and `internal/cli/*` are what Phase 1 (this repo state) delivers: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
+The service clients (now in `github.com/parsoFish/arrkit`, ADR-020), `internal/clients/{docker,hostfs}` and `internal/cli/*` are what Phase 1 delivered: a `Client` interface per service with its own types (not a third-party client's), an adapter over the shared `httpx` client, an `httptest`-backed fake for unit tests, and golden JSON fixtures captured from the live stack. See ADR-013 for why these are hand-rolled rather than built on `golift.io/starr` / `go-qbittorrent`.
 
 `internal/check` (the runner: `Registry`, `Run`, `Deps`, `Finding`/`Report`/`Result`) and `internal/checks/*` (21 check implementations, one family per client) are what Phase 2 delivers, together with `internal/store` and the `healarr check`/`report` CLI verbs — see ADR-017 and the "State store" section below for the store side, and `docs/runbook.md`'s "Running checks by hand" for the CLI. Phase 4 adds the catalogue's 22nd check, `staleness_scan` (`internal/staleness/`, ADR-016) — see the "Decisions" section below.
 

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/radarr"
+	"github.com/parsoFish/arrkit/radarr"
 )
 
 func newRadarrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {

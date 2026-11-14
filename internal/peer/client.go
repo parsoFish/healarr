@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/parsoFish/healarr/internal/clients/httpx"
+	"github.com/parsoFish/arrkit/httpx"
 )
 
 const (

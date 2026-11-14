@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parsoFish/healarr/internal/clients/httpx"
+	"github.com/parsoFish/arrkit/httpx"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

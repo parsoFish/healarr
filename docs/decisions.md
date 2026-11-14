@@ -235,3 +235,13 @@ Separately, Phase 2 (ADR-017) already shipped a `staleness_scores` table in migr
 Web sessions (`internal/web/auth.go`) for the new `/healarr/` pages live only in an in-memory map, not the store: a LAN-only tool with no "stay logged in across a redeploy" requirement doesn't need a sessions table, and losing every session on restart is an acceptable (arguably desirable, given how rarely `agent serve` restarts) side effect rather than something to engineer around.
 
 **Consequences.** Auditing "can this binary delete something right now" is one line in `config.toml`, not a search through per-plan or per-kind promotion state — `grep actions .` tells the whole story. The cost is coarseness: there is no way today to trust seeded-torrent cleanup but not recycle-bin cleanup, or staleness deletes but not cleanups — enabling `actions.enabled` turns on all of them simultaneously. An operator who wants to phase trust in more granularly has no config knob for that yet; it would need per-kind gating added later, deliberately, not smuggled in as a side effect of this ADR. Leaving `staleness_scores` unused means a future feature wanting score trends over time has to mine `FindingHistory` rather than read a purpose-built table — deferred, not designed around. And an operator who restarts the Pi's daemon (a deploy, a crash, a reboot) has to re-authenticate every browser against `/healarr/login?token=<web_token>` — documented in `docs/runbook.md`'s "Web UI" section rather than left to be discovered as a surprise.
+
+---
+
+## ADR-020 — Service clients extracted to arrkit
+
+**Context.** simplarr's control-plane UI (simplarr `docs/superpowers/specs/2026-11-14-control-plane-ui-design.md`) needs the same Radarr, Sonarr, Prowlarr, Overseerr, qBittorrent, Plex and Tautulli clients healarr built in Phase 1. Go's `internal/` rule stops another module from importing them. Copying them would give two drifting implementations of the same request and response shapes.
+
+**Decision.** Move `internal/clients/{httpx,radarr,sonarr,prowlarr,overseerr,qbittorrent,plex,tautulli}` to the new module `github.com/parsoFish/arrkit`, with history (`git subtree split`). healarr imports it at a tagged version. `docker` and `hostfs` stay here, because they are host-specific and simplarr deliberately has no docker socket. ADR-013's reasoning still holds inside arrkit: hand-rolled clients on a shared `httpx`, fixture-tested, with no third-party client libraries.
+
+**Consequences.** A client change is now an arrkit PR plus a version bump here, with `go.work` for local iteration across both. healarr's own test count drops by the 8 moved packages, whose tests now run in arrkit's CI. The repos stay separate, per ADR-001.

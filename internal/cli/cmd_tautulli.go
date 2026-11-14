@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/tautulli"
+	"github.com/parsoFish/arrkit/tautulli"
 )
 
 func newTautulliCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {

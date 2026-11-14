@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/prowlarr"
+	"github.com/parsoFish/arrkit/prowlarr"
 )
 
 func newProwlarrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {
