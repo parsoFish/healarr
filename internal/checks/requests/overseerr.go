@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/parsoFish/arrkit/overseerr"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/overseerr"
 )
 
 const overseerrStuckProcessingID = "overseerr_stuck_processing"

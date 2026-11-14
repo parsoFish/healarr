@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/overseerr"
+	"github.com/parsoFish/arrkit/overseerr"
 )
 
 func newOverseerrCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {

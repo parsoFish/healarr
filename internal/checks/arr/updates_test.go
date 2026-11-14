@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/parsoFish/arrkit/prowlarr"
+	"github.com/parsoFish/arrkit/radarr"
+	"github.com/parsoFish/arrkit/sonarr"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/prowlarr"
-	"github.com/parsoFish/healarr/internal/clients/radarr"
-	"github.com/parsoFish/healarr/internal/clients/sonarr"
 	"github.com/parsoFish/healarr/internal/config"
 )
 

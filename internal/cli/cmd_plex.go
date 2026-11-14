@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/plex"
+	"github.com/parsoFish/arrkit/plex"
 )
 
 func newPlexCmd(deps *Deps, flags *GlobalFlags) *cobra.Command {

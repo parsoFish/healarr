@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
+	"github.com/parsoFish/arrkit/qbittorrent"
 )
 
 // addQBitWriteCmds registers every mutating qBittorrent verb on root. Split

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/parsoFish/arrkit/qbittorrent"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
 )
 
 const stalledErroredID = "qbit_stalled_errored"

@@ -180,8 +180,8 @@ func TestServeWaitsForInFlightRequestBeforeShutdown(t *testing.T) {
 	cancel()
 
 	select {
-	case <-serveDone:
-		t.Fatal("Serve returned before the in-flight request finished")
+	case err := <-serveDone:
+		t.Fatalf("Serve returned before the in-flight request finished (err=%v)", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 

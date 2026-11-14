@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/parsoFish/arrkit/qbittorrent"
 	"github.com/parsoFish/healarr/internal/check"
-	"github.com/parsoFish/healarr/internal/clients/qbittorrent"
 )
 
 const notImportedID = "qbit_completed_not_imported"
